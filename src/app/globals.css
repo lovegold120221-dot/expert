@@ -7336,6 +7336,188 @@ html[data-theme="light"] .reminder-toast {
   color: var(--fg);
 }
 
+/* ── Video Background Bar ─────────────────────────────────────────────── */
+
+.preflight-bg-bar {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 8px 0 2px;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.preflight-bg-bar::-webkit-scrollbar {
+  display: none;
+}
+
+.preflight-bg-opt {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 3px;
+  border-radius: 10px;
+  border: 1.5px solid transparent;
+  background: transparent;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.preflight-bg-opt:hover {
+  border-color: var(--border);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.preflight-bg-opt--active {
+  border-color: var(--accent);
+  background: rgba(79, 140, 255, 0.08);
+}
+
+.preflight-bg-thumb {
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-inset);
+  border: 1px solid var(--border-light);
+}
+
+.preflight-bg-thumb--none {
+  background: rgba(0, 0, 0, 0.25);
+  color: var(--fg-tertiary);
+}
+
+.preflight-bg-thumb--blur {
+  background: linear-gradient(135deg, rgba(255,255,255,0.12), rgba(255,255,255,0.04));
+  color: var(--fg-tertiary);
+}
+
+.preflight-bg-thumb--upload {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--fg-tertiary);
+  border: 1px dashed var(--border);
+}
+
+.preflight-bg-thumb-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* ── Video Toggles (Mirror + Studio Effect) ──────────────────────────── */
+
+.preflight-video-toggles {
+  display: flex;
+  gap: 16px;
+  padding: 6px 0 0;
+  flex-wrap: wrap;
+}
+
+.preflight-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.preflight-toggle-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--fg-tertiary);
+  white-space: nowrap;
+}
+
+.preflight-toggle-switch {
+  position: relative;
+  width: 36px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+.preflight-toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+  position: absolute;
+}
+
+.preflight-toggle-slider {
+  position: absolute;
+  inset: 0;
+  background: var(--bg-inset);
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.preflight-toggle-slider::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: var(--fg-tertiary);
+  transition: all 0.2s ease;
+}
+
+.preflight-toggle-switch input:checked + .preflight-toggle-slider {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.preflight-toggle-switch input:checked + .preflight-toggle-slider::before {
+  background: #fff;
+  transform: translateX(16px);
+}
+
+/* Video box with background (image shown behind video) */
+.preflight-preview-video-box--bg {
+  background-size: cover;
+  background-position: center;
+  position: relative;
+}
+
+.preflight-preview-video-box--bg .preflight-preview-video {
+  object-fit: cover;
+}
+
+/* Light theme overrides */
+html[data-theme="light"] .preflight-bg-opt--active {
+  border-color: var(--accent);
+  background: rgba(37, 99, 235, 0.08);
+}
+
+html[data-theme="light"] .preflight-bg-thumb {
+  background: #fff;
+  border-color: rgba(0, 0, 0, 0.1);
+}
+
+html[data-theme="light"] .preflight-bg-thumb--none {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+html[data-theme="light"] .preflight-bg-thumb--blur {
+  background: linear-gradient(135deg, rgba(0,0,0,0.06), rgba(0,0,0,0.02));
+}
+
+html[data-theme="light"] .preflight-bg-thumb--upload {
+  background: rgba(0, 0, 0, 0.03);
+  border-color: rgba(0, 0, 0, 0.15);
+}
+
 /* Actions */
 .preflight-actions {
   display: flex;
@@ -7470,6 +7652,20 @@ html[data-theme="light"] .preflight-dselect select:focus {
 html[data-theme="light"] .preflight-preview-error {
   border-color: rgba(0, 0, 0, 0.1);
   background: rgba(255, 100, 95, 0.04);
+}
+
+html[data-theme="light"] .preflight-bg-thumb--none {
+  background: rgba(0, 0, 0, 0.05);
+  color: var(--fg-ghost);
+}
+
+html[data-theme="light"] .preflight-bg-thumb--blur {
+  background: linear-gradient(135deg, rgba(0,0,0,0.05), rgba(0,0,0,0.02));
+  color: var(--fg-ghost);
+}
+
+html[data-theme="light"] .preflight-toggle-label {
+  color: var(--fg-secondary);
 }
 
 html[data-theme="light"] .preflight-btn--ghost {

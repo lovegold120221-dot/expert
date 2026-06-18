@@ -26,7 +26,8 @@ export type UserProfile = {
   cam_device_id?: string;
   mirror_video?: boolean;
   camera_off_on_join?: boolean;
-  video_background?: string; // "none" | "blur" | "color-#hex" | "custom-{name}"
+  video_background?: string; // "none" | "blur" | "color-#hex" | "custom-{name}" | "bg-studio/bgN.jpg"
+  studio_effect?: boolean;   // TikTok-style beautification filter
   // Translation
   content_type?: "normal" | "movie" | "cinematic_faithful";
   show_captions?: boolean;
@@ -61,6 +62,7 @@ const DEFAULT_PROFILE: UserProfile = {
   mirror_video: true,
   camera_off_on_join: false,
   video_background: "none",
+  studio_effect: false,
   content_type: "normal",
   show_captions: true,
   mute_original_audio: true,

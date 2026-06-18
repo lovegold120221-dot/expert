@@ -48,7 +48,58 @@ export default function PreFlightPage({
   const [usingFrontCam, setUsingFrontCam] = useState(true);
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const mobileDevice = isMobile();
+
+  // Video effects
+  const [videoBackground, setVideoBackground] = useState(profile?.video_background || "none");
+  const [mirrorVideo, setMirrorVideo] = useState(profile?.mirror_video !== false);
+  const [studioEffect, setStudioEffect] = useState(profile?.studio_effect || false);
+  const [customBgs, setCustomBgs] = useState<{ name: string; data: string }[]>([]);
+  const STORAGE_BGS_KEY = "orbit.customBgs";
+
+  const BG_PRESETS = [
+    { id: "none", label: "None", thumb: null },
+    { id: "blur", label: "Blur", thumb: null },
+    { id: "bg-studio/bg1.jpg", label: "Studio 1", thumb: "/bg-studio/bg1.jpg" },
+    { id: "bg-studio/bg2.jpg", label: "Studio 2", thumb: "/bg-studio/bg2.jpg" },
+    { id: "bg-studio/bg3.jpg", label: "Studio 3", thumb: "/bg-studio/bg3.jpg" },
+    { id: "bg-studio/bg4.jpg", label: "Studio 4", thumb: "/bg-studio/bg4.jpg" },
+    { id: "bg-studio/bg5.jpg", label: "Studio 5", thumb: "/bg-studio/bg5.jpg" },
+  ];
+
+  // Determine effective container background
+  const containerBgStyle = (() => {
+    if (videoBackground === "none" || videoBackground === "blur") return {};
+    if (videoBackground.startsWith("custom-")) {
+      const entry = customBgs.find((b) => `custom-${b.name}` === videoBackground);
+      if (entry) {
+        return { backgroundImage: `url(${entry.data})`, backgroundSize: "cover", backgroundPosition: "center" };
+      }
+    }
+    // bg-studio/* paths
+    return {
+      backgroundImage: `url(/${videoBackground})`,
+      backgroundSize: "cover",
+      backgroundPosition: "center",
+    };
+  })();
+
+  // Video CSS transform
+  const videoTransform = mirrorVideo && (videoBackground === "blur" || studioEffect)
+    ? "scaleX(-1) scale(1.1)"
+    : mirrorVideo
+      ? "scaleX(-1)"
+      : videoBackground === "blur" || studioEffect
+        ? "scale(1.1)"
+        : undefined;
+
+  // TikTok-style beautification filter
+  const videoFilter = studioEffect
+    ? "brightness(1.08) contrast(0.92) saturate(0.85) blur(0.3px)"
+    : videoBackground === "blur"
+      ? "blur(12px)"
+      : undefined;
 
   // ── Enumerate devices ──────────────────────────────────────────────────
 
@@ -129,6 +180,56 @@ export default function PreFlightPage({
       videoRef.current.srcObject = previewStream;
     }
   }, [previewStream]);
+
+  // Load custom backgrounds from localStorage
+  useEffect(() => {
+    setTimeout(() => {
+      try {
+        const raw = localStorage.getItem(STORAGE_BGS_KEY);
+        if (raw) setCustomBgs(JSON.parse(raw));
+      } catch { /* ignore */ }
+    }, 0);
+  }, []);
+
+  // Save video settings to profile on change
+  const saveVideoSettings = useCallback((bg: string, mirror: boolean, studio: boolean) => {
+    if (profile) {
+      updateProfile({ video_background: bg, mirror_video: mirror, studio_effect: studio });
+    }
+  }, [profile, updateProfile]);
+
+  const handleBgChange = useCallback((bg: string) => {
+    setVideoBackground(bg);
+    saveVideoSettings(bg, mirrorVideo, studioEffect);
+  }, [mirrorVideo, studioEffect, saveVideoSettings]);
+
+  const handleMirrorChange = useCallback((val: boolean) => {
+    setMirrorVideo(val);
+    saveVideoSettings(videoBackground, val, studioEffect);
+  }, [videoBackground, studioEffect, saveVideoSettings]);
+
+  const handleStudioChange = useCallback((val: boolean) => {
+    setStudioEffect(val);
+    saveVideoSettings(videoBackground, mirrorVideo, val);
+  }, [videoBackground, mirrorVideo, saveVideoSettings]);
+
+  const handleBgUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const dataUrl = ev.target?.result as string;
+      const name = `bg-${Date.now()}`;
+      const updated = [...customBgs, { name, data: dataUrl }];
+      setCustomBgs(updated);
+      localStorage.setItem(STORAGE_BGS_KEY, JSON.stringify(updated));
+      setVideoBackground(`custom-${name}`);
+      saveVideoSettings(`custom-${name}`, mirrorVideo, studioEffect);
+    };
+    reader.readAsDataURL(file);
+    e.target.value = "";
+  }, [customBgs, mirrorVideo, studioEffect, saveVideoSettings]);
 
   // ── Camera switch ──────────────────────────────────────────────────────
 
@@ -326,13 +427,20 @@ export default function PreFlightPage({
               </div>
             ) : (
               <>
-                <div className="preflight-preview-video-box">
+                <div
+                  className={`preflight-preview-video-box${videoBackground !== "none" ? " preflight-preview-video-box--bg" : ""}`}
+                  style={containerBgStyle}
+                >
                   <video
                     ref={videoRef}
                     autoPlay
                     playsInline
                     muted
                     className="preflight-preview-video"
+                    style={{
+                      transform: videoTransform,
+                      filter: videoFilter,
+                    }}
                   />
                   {mobileDevice && cameras.length > 1 && (
                     <button
@@ -364,6 +472,99 @@ export default function PreFlightPage({
                     </span>
                   )}
                 </p>
+
+                {/* ── Video background presets ── */}
+                <div className="preflight-bg-bar">
+                  {BG_PRESETS.map((preset) => (
+                    <button
+                      key={preset.id}
+                      className={`preflight-bg-opt${videoBackground === preset.id ? " preflight-bg-opt--active" : ""}`}
+                      onClick={() => handleBgChange(preset.id)}
+                      title={preset.label}
+                    >
+                      {preset.id === "none" ? (
+                        <div className="preflight-bg-thumb preflight-bg-thumb--none">
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                            <line x1="18" y1="6" x2="6" y2="18" />
+                          </svg>
+                        </div>
+                      ) : preset.id === "blur" ? (
+                        <div className="preflight-bg-thumb preflight-bg-thumb--blur">
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                            <circle cx="12" cy="12" r="10" />
+                            <path d="M12 2a10 10 0 0 1 0 20" />
+                          </svg>
+                        </div>
+                      ) : (
+                        <div className="preflight-bg-thumb">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={preset.thumb!} alt={preset.label} className="preflight-bg-thumb-img" />
+                        </div>
+                      )}
+                    </button>
+                  ))}
+                  {/* Upload button */}
+                  <button
+                    className="preflight-bg-opt preflight-bg-opt--upload"
+                    onClick={() => fileInputRef.current?.click()}
+                    title="Upload custom background"
+                  >
+                    <div className="preflight-bg-thumb preflight-bg-thumb--upload">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                        <polyline points="17 8 12 3 7 8" />
+                        <line x1="12" y1="3" x2="12" y2="15" />
+                      </svg>
+                    </div>
+                  </button>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    style={{ display: "none" }}
+                    onChange={handleBgUpload}
+                  />
+                  {/* Custom uploaded items */}
+                  {customBgs.map((bg) => (
+                    <button
+                      key={bg.name}
+                      className={`preflight-bg-opt${videoBackground === `custom-${bg.name}` ? " preflight-bg-opt--active" : ""}`}
+                      onClick={() => handleBgChange(`custom-${bg.name}`)}
+                      title={bg.name}
+                    >
+                      <div className="preflight-bg-thumb" style={{ position: "relative" }}>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={bg.data} alt="" className="preflight-bg-thumb-img" />
+                      </div>
+                    </button>
+                  ))}
+                </div>
+
+                {/* ── Mirror + Studio toggles ── */}
+                <div className="preflight-video-toggles">
+                  <label className="preflight-toggle">
+                    <span className="preflight-toggle-label">Mirror video</span>
+                    <div className="preflight-toggle-switch">
+                      <input
+                        type="checkbox"
+                        checked={mirrorVideo}
+                        onChange={(e) => handleMirrorChange(e.target.checked)}
+                      />
+                      <span className="preflight-toggle-slider" />
+                    </div>
+                  </label>
+                  <label className="preflight-toggle">
+                    <span className="preflight-toggle-label">Studio effect</span>
+                    <div className="preflight-toggle-switch">
+                      <input
+                        type="checkbox"
+                        checked={studioEffect}
+                        onChange={(e) => handleStudioChange(e.target.checked)}
+                      />
+                      <span className="preflight-toggle-slider" />
+                    </div>
+                  </label>
+                </div>
               </>
             )}
           </div>
