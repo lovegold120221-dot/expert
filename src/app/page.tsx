@@ -34,7 +34,9 @@ export default function Home() {
   const [joinValue, setJoinValue] = useState("");
   const [joinError, setJoinError] = useState("");
   const [scheduleTitle, setScheduleTitle] = useState("Orbit Meeting");
-  const [scheduleDate, setScheduleDate] = useState(new Date().toISOString().split("T")[0]);
+  const [scheduleMonth, setScheduleMonth] = useState(() => String(new Date().getMonth()));
+  const [scheduleDay, setScheduleDay] = useState(() => String(new Date().getDate()));
+  const [scheduleYear, setScheduleYear] = useState(() => String(new Date().getFullYear()));
   const [scheduleHour, setScheduleHour] = useState("12");
   const [scheduleMinute, setScheduleMinute] = useState("00");
   const [schedulePeriod, setSchedulePeriod] = useState("PM");
@@ -133,7 +135,9 @@ export default function Home() {
     const period = h24 >= 12 ? "PM" : "AM";
     const h12 = (h24 % 12) || 12;
     
-    setScheduleDate(future.toISOString().split("T")[0]);
+    setScheduleMonth(String(future.getMonth()));
+    setScheduleDay(String(future.getDate()));
+    setScheduleYear(String(future.getFullYear()));
     setScheduleHour(h12.toString().padStart(2, "0"));
     setScheduleMinute(future.getMinutes().toString().padStart(2, "0"));
     setSchedulePeriod(period);
@@ -156,11 +160,16 @@ export default function Home() {
     if (schedulePeriod === "PM" && h < 12) h += 12;
     if (schedulePeriod === "AM" && h === 12) h = 0;
     const h24 = h.toString().padStart(2, "0");
-    return `${scheduleDate}T${h24}:${scheduleMinute}`;
+    const m = parseInt(scheduleMonth, 10);
+    const d = parseInt(scheduleDay, 10);
+    const y = parseInt(scheduleYear, 10);
+    const mm = String(m + 1).padStart(2, "0");
+    const dd = String(d).padStart(2, "0");
+    return `${y}-${mm}-${dd}T${h24}:${scheduleMinute}`;
   })();
 
   async function saveAndRemind() {
-    if (!scheduledLink || !scheduleDate || !scheduleHour || !scheduleMinute) return;
+    if (!scheduledLink || !scheduleMonth || !scheduleDay || !scheduleYear || !scheduleHour || !scheduleMinute) return;
 
     const meeting: ScheduledMeeting = {
       id: scheduledLink.split("/").pop() || crypto.randomUUID(),
@@ -326,14 +335,39 @@ export default function Home() {
                   />
                 </label>
                  <label className="entry-field">
-                   <span>Date and time</span>
-                   <div className="schedule-time-picker">
-                     <input
-                       type="date"
-                       value={scheduleDate}
-                       onChange={(event) => setScheduleDate(event.target.value)}
-                     />
-                      <div className="time-selects">
+                    <span>Date and time</span>
+                    <div className="schedule-time-picker">
+                      <div className="time-selects time-selects--date">
+                        <select
+                          value={scheduleMonth}
+                          onChange={(e) => setScheduleMonth(e.target.value)}
+                        >
+                          {[
+                            "January", "February", "March", "April", "May", "June",
+                            "July", "August", "September", "October", "November", "December"
+                          ].map((name, i) => (
+                            <option key={i} value={i}>{name}</option>
+                          ))}
+                        </select>
+                        <select
+                          value={scheduleDay}
+                          onChange={(e) => setScheduleDay(e.target.value)}
+                        >
+                          {Array.from({ length: 31 }, (_, i) => (
+                            <option key={i} value={i + 1}>{i + 1}</option>
+                          ))}
+                        </select>
+                        <select
+                          value={scheduleYear}
+                          onChange={(e) => setScheduleYear(e.target.value)}
+                        >
+                          {Array.from({ length: 5 }, (_, i) => {
+                            const y = new Date().getFullYear() + i;
+                            return <option key={y} value={y}>{y}</option>;
+                          })}
+                        </select>
+                      </div>
+                      <div className="time-selects time-selects--time">
                         <select
                           value={scheduleHour}
                           onChange={(event) => setScheduleHour(event.target.value)}
@@ -366,8 +400,8 @@ export default function Home() {
                           <option value="PM">PM</option>
                         </select>
                       </div>
-                   </div>
-                 </label>
+                    </div>
+                  </label>
 
                 <div className="schedule-link">
                   <span>{scheduledLink}</span>

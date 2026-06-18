@@ -3327,101 +3327,90 @@ html[data-theme="dark"] .auth-logo-bg {
 }
 
 .schedule-time-picker {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
   margin-top: 8px;
+  align-items: stretch;
 }
 
-@media (min-width: 440px) {
+@media (max-width: 540px) {
   .schedule-time-picker {
-    flex-direction: row;
-    align-items: center;
+    grid-template-columns: 1fr;
   }
-}
-
-.schedule-time-picker input[type="date"] {
-  min-height: 48px;
-  padding: 0 16px;
-  border: 1px solid #cfd7e6;
-  border-radius: 12px;
-  background-color: #ffffff;
-  color: #171a20;
-  font-family: inherit;
-  font-size: 14px;
-  font-weight: 600;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  cursor: pointer;
-  flex: 1;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.04);
-}
-
-.schedule-time-picker input[type="date"]:hover {
-  border-color: #aeb9cb;
-  transform: translateY(-1px);
-}
-
-.schedule-time-picker input[type="date"]:focus {
-  outline: none;
-  border-color: #2f6fed;
-  box-shadow: 0 0 0 4px rgba(47, 111, 237, 0.1);
 }
 
 .time-selects {
   display: flex;
   align-items: center;
-  gap: 6px;
-  background: #f8fafc;
-  padding: 6px;
-  border-radius: 16px;
+  gap: 4px;
+  background: #ffffff;
+  padding: 4px;
+  border-radius: 14px;
   border: 1px solid #e1e5ef;
-  box-shadow: inset 0 1px 3px rgba(0,0,0,0.05);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+}
+
+.time-selects--date {
+  flex: 1;
+}
+
+.time-selects--date select {
+  flex: 1;
+  min-width: 0;
+}
+
+.time-selects--time {
+  flex-shrink: 0;
 }
 
 .time-selects select {
   appearance: none;
   -webkit-appearance: none;
-  min-height: 40px;
-  padding: 0 28px 0 14px;
+  min-height: 36px;
+  padding: 0 22px 0 10px;
   border: 1px solid transparent;
-  border-radius: 10px;
+  border-radius: 8px;
   background-color: transparent;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%238d96a6' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23171a20' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
-  background-position: right 8px center;
+  background-position: right 6px center;
   color: #171a20;
   font-family: inherit;
-  font-size: 15px;
-  font-weight: 700;
+  font-size: 13px;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
   cursor: pointer;
-  transition: all 0.2s ease;
-  width: 70px;
+  transition: all 0.15s ease;
+}
+
+.time-selects--date select {
+  font-size: 13px;
+  font-weight: 500;
+  text-align: center;
 }
 
 .time-selects select:hover {
-  background-color: #ffffff;
-  color: #2f6fed;
-  transform: scale(1.02);
+  background-color: #f1f4f9;
+  color: #000;
 }
 
 .time-selects select:focus {
   outline: none;
-  background-color: #ffffff;
+  background-color: #f1f4f9;
   border-color: #2f6fed;
 }
 
-.time-selects select:last-of-type {
-  background-color: rgba(47, 111, 237, 0.08);
-  color: #2f6fed;
-  padding-right: 24px;
-  background-position: right 6px center;
+.time-selects--date select:first-child {
+  font-weight: 600;
 }
 
 .time-separator {
   font-weight: 700;
   color: #8d96a6;
-  padding: 0 2px;
+  padding: 0 1px;
+  font-size: 14px;
+  line-height: 1;
 }
 
 .schedule-link {
@@ -9325,38 +9314,34 @@ html[data-theme="light"] .share-icon-whatsapp:hover {
 
 .entry-form--schedule .schedule-time-picker {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  align-items: center;
-  gap: 14px;
+  grid-template-columns: 1fr auto;
+  align-items: stretch;
+  gap: 10px;
   margin-top: 8px;
-}
-
-.entry-form--schedule .schedule-time-picker input[type="date"] {
-  width: 100%;
-  min-width: 0;
-  flex: initial;
 }
 
 .entry-form--schedule .time-selects {
   width: 100%;
   max-width: 100%;
   min-width: 0;
+}
+
+.entry-form--schedule .time-selects--date {
   display: grid;
-  grid-template-columns: minmax(50px, 1fr) auto minmax(50px, 1fr) minmax(64px, 1fr);
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 4px;
+}
+
+.entry-form--schedule .time-selects--time {
+  display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
 }
 
 .entry-form--schedule .time-selects select {
-  width: 100%;
   min-width: 0;
   max-width: 100%;
-}
-
-.entry-form--schedule .time-separator {
-  min-width: 0;
-  padding: 0;
-  text-align: center;
+  width: auto;
 }
 
 .entry-form--schedule .schedule-link {
