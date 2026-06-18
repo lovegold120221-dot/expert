@@ -4,6 +4,15 @@
 ## Anchored Summary
 
 ### Done
+- **Canvas chroma key compositing** — real green-screen background replacement with `requestAnimationFrame` loop, `getImageData`/`putImageData` per-pixel processing, configurable chroma color (green/blue/red/magenta), soft edge blending, ResizeObserver canvas sizing, mirror via canvas transform
+- Preset thumbnails changed to 16:9 (48×27px)
+- Video studio background presets: None, Blur, 5 studio bgs, custom upload, mirror toggle, studio effect (all saved to Supabase profile)
+- `supabase/migrations/012_studio_effect.sql`
+- Schedule meeting: month/day/year + HH:MM AM/PM dropdowns, white bg, dark chevron
+- Self-hosted deployment guide in README (LiveKit/Supabase Docker Compose)
+- Dark gradient buttons on light theme: `#1e2029` → `#0f1115` for CTAs
+- Close (X) icon top-right of preflight card navigating to `/`
+- Name prefills from `sessionStorage` immediately via `useState` lazy initializer
 - Added Translation History page (`/history`) with search, session grouping, chronological order, empty state — history icon in ControlBar center section
 - Created translation_history table migration, localStorage + Supabase persistence, history help lib
 - Wired translation capture in OrbitTranslationPanel — finalized entries saved to localStorage + Supabase in batch
@@ -2241,3 +2250,40 @@ Agent starts, connects to LiveKit Cloud (`wss://eburon-meet-15gd8gwg.livekit.clo
   - Verified compilation via `npx next build`.
   - Verified Python tests via `pytest`.
 
+## TASK-20260618-094500: Canvas chroma key compositing for video backgrounds
+
+### START RECORD
+- STATUS: COMPLETED
+- Start time: 2026-06-18T09:45:00Z
+- User request: "make the bg effects or presets to become the video bg of the user when selected, make it work like how the zoom green screen works add also a green screen bg color use a 16:9 ratio for the preset bg"
+- Preservation constraints: Preserve existing video preview layout, device selection, profile persistence, and CSS design system.
+- Success criteria:
+  - Image background presets render via canvas compositing (not just CSS behind video)
+  - Chroma key (green screen) toggle removes key-colored pixels to reveal background
+  - User can select green/blue/red/magenta as the chroma key color
+  - Preset thumbnails are 16:9 aspect ratio
+  - Build and lint pass
+
+### TODO
+- [x] Add canvas ref, chroma key state (color, enabled), image refs
+- [x] Implement `requestAnimationFrame` compositing loop: draw bg → draw video → chroma key pixel processing
+- [x] Add ResizeObserver for canvas sizing to match container
+- [x] Conditionally show canvas vs video element based on background type
+- [x] Add chroma key toggle and color picker (green/blue/red/magenta)
+- [x] Change preset thumbnails to 16:9 (48×27px)
+- [x] Move chroma section outside scrollable bg-bar into its own row
+- [x] Verify build (TypeScript + Turbopack) passes
+- [x] Verify lint (ESLint) passes
+
+### FINAL REPORT
+- STATUS: COMPLETED
+- End time: 2026-06-18T10:15:00Z
+- Files changed:
+  - `src/app/session/[id]/page.tsx` — Added canvasRef, videoBoxRef, chromaKeyEnabled/chromaColor state, bgImageRef, compositing useEffect with requestAnimationFrame loop (draw background → draw video → chroma key per-pixel processing), ResizeObserver canvas sizing, conditional canvas/video rendering, chroma key toggle + color picker in UI
+  - `src/app/globals.css` — `.preflight-bg-thumb` changed to 48×27 (16:9), added `.preflight-preview-canvas`, `.preflight-preview-video--hidden`, `.preflight-preview-video-box--canvas`, `.preflight-chroma-section`, `.preflight-chroma-toggle`, `.preflight-chroma-slider`, `.preflight-chroma-label`, `.preflight-chroma-colors`, `.preflight-chroma-color-opt` styles
+- Validation performed:
+  - `pnpm build` — 17 routes compiled successfully (TypeScript + Turbopack)
+  - `npx eslint src/app/session/\[id\]/page.tsx` — 0 errors in our file
+- CSS/UI preservation: All existing video preview layout, device selection, profile persistence, and design system classes preserved. Chroma section added as a new row below bg bar.
+- Known issues: None
+- Next step: Test with a real webcam to verify green screen removal quality

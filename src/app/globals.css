@@ -7340,9 +7340,13 @@ html[data-theme="light"] .reminder-toast {
 
 .preflight-bg-bar {
   display: flex;
-  gap: 6px;
+  gap: 4px;
   overflow-x: auto;
-  padding: 8px 0 2px;
+  padding: 6px;
+  margin-top: 6px;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 10px;
+  border: 1px solid var(--border-light);
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
 }
@@ -7353,34 +7357,31 @@ html[data-theme="light"] .reminder-toast {
 
 .preflight-bg-opt {
   flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  padding: 3px;
-  border-radius: 10px;
+  padding: 2px;
+  border-radius: 8px;
   border: 1.5px solid transparent;
   background: transparent;
   cursor: pointer;
   transition: all 0.15s ease;
   -webkit-appearance: none;
   appearance: none;
+  line-height: 0;
 }
 
 .preflight-bg-opt:hover {
   border-color: var(--border);
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .preflight-bg-opt--active {
   border-color: var(--accent);
-  background: rgba(79, 140, 255, 0.08);
+  background: rgba(79, 140, 255, 0.1);
 }
 
 .preflight-bg-thumb {
-  width: 44px;
-  height: 44px;
-  border-radius: 8px;
+  width: 48px;
+  height: 27px;
+  border-radius: 5px;
   overflow: hidden;
   display: flex;
   align-items: center;
@@ -7410,6 +7411,11 @@ html[data-theme="light"] .reminder-toast {
   height: 100%;
   object-fit: cover;
   display: block;
+}
+
+html[data-theme="light"] .preflight-bg-bar {
+  background: rgba(0, 0, 0, 0.03);
+  border-color: rgba(0, 0, 0, 0.08);
 }
 
 /* ── Video Toggles (Mirror + Studio Effect) ──────────────────────────── */
@@ -7492,6 +7498,124 @@ html[data-theme="light"] .reminder-toast {
 
 .preflight-preview-video-box--bg .preflight-preview-video {
   object-fit: cover;
+}
+
+/* Canvas compositing box — replaces video with canvas for image backgrounds */
+.preflight-preview-video-box--canvas {
+  position: relative;
+  background: #000;
+}
+
+.preflight-preview-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+/* Hide video element when canvas is active (still plays for canvas source) */
+.preflight-preview-video--hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* ── Chroma key section ── */
+
+.preflight-chroma-section {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 4px 0;
+  flex-shrink: 0;
+}
+
+.preflight-chroma-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  -webkit-user-select: none;
+  user-select: none;
+  position: relative;
+}
+
+.preflight-chroma-toggle input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+  position: absolute;
+}
+
+.preflight-chroma-slider {
+  width: 28px;
+  height: 16px;
+  background: var(--bg-inset);
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  position: relative;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.preflight-chroma-slider::before {
+  content: "";
+  position: absolute;
+  left: 1px;
+  top: 1px;
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: var(--fg-tertiary);
+  transition: all 0.2s ease;
+}
+
+.preflight-chroma-toggle input:checked + .preflight-chroma-slider {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.preflight-chroma-toggle input:checked + .preflight-chroma-slider::before {
+  background: #fff;
+  transform: translateX(12px);
+}
+
+.preflight-chroma-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--fg-tertiary);
+  white-space: nowrap;
+}
+
+.preflight-chroma-colors {
+  display: flex;
+  gap: 4px;
+  padding-left: 2px;
+}
+
+.preflight-chroma-color-opt {
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  -webkit-appearance: none;
+  appearance: none;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.preflight-chroma-color-opt:hover {
+  transform: scale(1.15);
+}
+
+.preflight-chroma-color-opt--active {
+  border-color: #fff;
+  box-shadow: 0 0 0 1.5px rgba(0, 0, 0, 0.4);
 }
 
 /* Light theme overrides */

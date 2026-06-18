@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useState, useEffect, useCallback, useRef } from "react";
+import { use, useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { PICKER_LANGUAGES } from "@/lib/languages";
 import { useUser } from "@/context/UserContext";
@@ -57,6 +57,24 @@ export default function PreFlightPage({
   const [studioEffect, setStudioEffect] = useState(profile?.studio_effect || false);
   const [customBgs, setCustomBgs] = useState<{ name: string; data: string }[]>([]);
   const STORAGE_BGS_KEY = "orbit.customBgs";
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const videoBoxRef = useRef<HTMLDivElement>(null);
+  const animFrameRef = useRef<number>(0);
+  const [chromaKeyEnabled, setChromaKeyEnabled] = useState(false);
+  const [chromaColor, setChromaColor] = useState("#00ff00");
+  const bgImageRef = useRef<HTMLImageElement | null>(null);
+  const customBgDataRef = useRef<string | null>(null);
+
+  const CHROMA_COLORS = [
+    { label: "Green", value: "#00ff00" },
+    { label: "Blue", value: "#0000ff" },
+    { label: "Red", value: "#ff0000" },
+    { label: "Magenta", value: "#ff00ff" },
+  ];
+
+  const hasImageBg = useMemo(() => {
+    return videoBackground !== "none" && videoBackground !== "blur";
+  }, [videoBackground]);
 
   const BG_PRESETS = [
     { id: "none", label: "None", thumb: null },
@@ -68,24 +86,180 @@ export default function PreFlightPage({
     { id: "bg-studio/bg5.jpg", label: "Studio 5", thumb: "/bg-studio/bg5.jpg" },
   ];
 
-  // Determine effective container background
-  const containerBgStyle = (() => {
-    if (videoBackground === "none" || videoBackground === "blur") return {};
+  // Load background image into ref when it changes
+  useEffect(() => {
+    if (videoBackground === "none" || videoBackground === "blur") {
+      bgImageRef.current = null;
+      customBgDataRef.current = null;
+      return;
+    }
+
     if (videoBackground.startsWith("custom-")) {
       const entry = customBgs.find((b) => `custom-${b.name}` === videoBackground);
       if (entry) {
-        return { backgroundImage: `url(${entry.data})`, backgroundSize: "cover", backgroundPosition: "center" };
+        customBgDataRef.current = entry.data;
+        const img = new Image();
+        img.crossOrigin = "anonymous";
+        img.src = entry.data;
+        img.onload = () => { bgImageRef.current = img; };
+      }
+    } else {
+      customBgDataRef.current = null;
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.src = `/${videoBackground}`;
+      img.onload = () => { bgImageRef.current = img; };
+    }
+  }, [videoBackground, customBgs]);
+
+  // ── Canvas compositing loop ─────────────────────────────────────────────
+  useEffect(() => {
+    const videoEl = videoRef.current;
+    const canvasEl = canvasRef.current;
+    const boxEl = videoBoxRef.current;
+    if (!canvasEl || !videoEl || !boxEl) return;
+
+    // Match canvas pixel dimensions to container
+    function sizeCanvas() {
+      const b = videoBoxRef.current;
+      const c = canvasRef.current;
+      if (!b || !c) return;
+      const rect = b.getBoundingClientRect();
+      const w = Math.round(rect.width);
+      const h = Math.round(rect.height);
+      if (w > 0 && h > 0 && (c.width !== w || c.height !== h)) {
+        c.width = w;
+        c.height = h;
       }
     }
-    // bg-studio/* paths
-    return {
-      backgroundImage: `url(/${videoBackground})`,
-      backgroundSize: "cover",
-      backgroundPosition: "center",
-    };
-  })();
 
-  // Video CSS transform
+    const ro = new ResizeObserver(sizeCanvas);
+    ro.observe(boxEl);
+    sizeCanvas();
+
+    let running = true;
+
+    function composite() {
+      if (!running) return;
+
+      const c = canvasRef.current;
+      const ctx = c?.getContext("2d");
+      if (!c || !ctx) {
+        animFrameRef.current = requestAnimationFrame(composite);
+        return;
+      }
+
+      sizeCanvas();
+
+      const cw = c.width;
+      const ch = c.height;
+      if (cw === 0 || ch === 0) {
+        animFrameRef.current = requestAnimationFrame(composite);
+        return;
+      }
+
+      // 1. Draw background image (if available)
+      const bgImg = bgImageRef.current;
+      if (bgImg && bgImg.complete && bgImg.naturalWidth > 0) {
+        // Cover-fill the background image onto the canvas
+        const scaleX = cw / bgImg.naturalWidth;
+        const scaleY = ch / bgImg.naturalHeight;
+        const scale = Math.max(scaleX, scaleY);
+        const bw = bgImg.naturalWidth * scale;
+        const bh = bgImg.naturalHeight * scale;
+        const bx = (cw - bw) / 2;
+        const by = (ch - bh) / 2;
+        ctx.drawImage(bgImg, bx, by, bw, bh);
+      } else {
+        // Fallback: clear to dark
+        ctx.clearRect(0, 0, cw, ch);
+      }
+
+      // 2. Draw video frame on top
+      const vEl = videoRef.current;
+      if (vEl && vEl.readyState >= 2) {
+        const vw = vEl.videoWidth;
+        const vh = vEl.videoHeight;
+        if (vw > 0 && vh > 0) {
+          // Cover-fill the video onto the canvas
+          const scaleX = cw / vw;
+          const scaleY = ch / vh;
+          const scale = Math.max(scaleX, scaleY);
+          const drawW = vw * scale;
+          const drawH = vh * scale;
+          const drawX = (cw - drawW) / 2;
+          const drawY = (ch - drawH) / 2;
+
+          if (mirrorVideo) {
+            ctx.save();
+            ctx.translate(cw, 0);
+            ctx.scale(-1, 1);
+            ctx.drawImage(vEl, drawX, drawY, drawW, drawH);
+            ctx.restore();
+          } else {
+            ctx.drawImage(vEl, drawX, drawY, drawW, drawH);
+          }
+
+          // 3. Chroma key: remove green pixels to reveal background
+          if (chromaKeyEnabled) {
+            const imageData = ctx.getImageData(0, 0, cw, ch);
+            const data = imageData.data;
+
+            // Parse chroma color
+            const r = parseInt(chromaColor.slice(1, 3), 16);
+            const g = parseInt(chromaColor.slice(3, 5), 16);
+            const b = parseInt(chromaColor.slice(5, 7), 16);
+
+            // Tolerance and softness for natural keying
+            const tolerance = 60;
+            const softness = 20;
+
+            for (let i = 0; i < data.length; i += 4) {
+              const pr = data[i];
+              const pg = data[i + 1];
+              const pb = data[i + 2];
+
+              // Distance from chroma color in RGB cube
+              const dr = pr - r;
+              const dg = pg - g;
+              const db = pb - b;
+              const dist = Math.sqrt(dr * dr + dg * dg + db * db);
+
+              if (dist < tolerance) {
+                // Fully transparent (reveal background)
+                if (dist < tolerance - softness) {
+                  data[i + 3] = 0;
+                } else {
+                  // Edge softness - partial transparency
+                  const alpha = Math.max(0, (dist - (tolerance - softness)) / softness);
+                  data[i + 3] = Math.round(alpha * 255);
+                }
+              }
+            }
+
+            ctx.putImageData(imageData, 0, 0);
+          }
+        }
+      }
+
+      animFrameRef.current = requestAnimationFrame(composite);
+    }
+
+    animFrameRef.current = requestAnimationFrame(composite);
+
+    return () => {
+      running = false;
+      cancelAnimationFrame(animFrameRef.current);
+      ro.disconnect();
+    };
+  }, [previewStream, videoBackground, mirrorVideo, chromaKeyEnabled, chromaColor]);
+
+  // Studio effect CSS filter (applied to canvas via CSS or we handle it)
+  const canvasFilter = studioEffect
+    ? "brightness(1.08) contrast(0.92) saturate(0.85) blur(0.3px)"
+    : undefined;
+
+  // Video CSS transform (only used when no image background)
   const videoTransform = mirrorVideo && (videoBackground === "blur" || studioEffect)
     ? "scaleX(-1) scale(1.1)"
     : mirrorVideo
@@ -94,12 +268,19 @@ export default function PreFlightPage({
         ? "scale(1.1)"
         : undefined;
 
-  // TikTok-style beautification filter
+  // TikTok-style beautification filter (only used for blur/none)
   const videoFilter = studioEffect
     ? "brightness(1.08) contrast(0.92) saturate(0.85) blur(0.3px)"
     : videoBackground === "blur"
       ? "blur(12px)"
       : undefined;
+
+  // Background style for CSS mode (blur/none)
+  const containerBgStyle = (() => {
+    if (videoBackground === "none" || videoBackground === "blur") return {};
+    // For image backgrounds the canvas handles compositing, but keep fallback
+    return {};
+  })();
 
   // ── Enumerate devices ──────────────────────────────────────────────────
 
@@ -428,15 +609,25 @@ export default function PreFlightPage({
             ) : (
               <>
                 <div
-                  className={`preflight-preview-video-box${videoBackground !== "none" ? " preflight-preview-video-box--bg" : ""}`}
+                  ref={videoBoxRef}
+                  className={`preflight-preview-video-box${hasImageBg ? " preflight-preview-video-box--canvas" : videoBackground !== "none" ? " preflight-preview-video-box--bg" : ""}`}
                   style={containerBgStyle}
                 >
+                  {/* Canvas compositing layer (used when image bg selected) */}
+                  {hasImageBg ? (
+                    <canvas
+                      ref={canvasRef}
+                      className="preflight-preview-canvas"
+                      style={{ filter: canvasFilter }}
+                    />
+                  ) : null}
+                  {/* Video element: hidden when canvas compositing, visible otherwise */}
                   <video
                     ref={videoRef}
                     autoPlay
                     playsInline
                     muted
-                    className="preflight-preview-video"
+                    className={`preflight-preview-video${hasImageBg ? " preflight-preview-video--hidden" : ""}`}
                     style={{
                       transform: videoTransform,
                       filter: videoFilter,
@@ -539,6 +730,35 @@ export default function PreFlightPage({
                     </button>
                   ))}
                 </div>
+
+                {/* ── Chroma key toggle & color picker ── */}
+                {hasImageBg && (
+                  <div className="preflight-chroma-section">
+                    <label className="preflight-chroma-toggle">
+                      <input
+                        type="checkbox"
+                        checked={chromaKeyEnabled}
+                        onChange={(e) => setChromaKeyEnabled(e.target.checked)}
+                      />
+                      <span className="preflight-chroma-slider" />
+                      <span className="preflight-chroma-label">Green screen</span>
+                    </label>
+                    {chromaKeyEnabled && (
+                      <div className="preflight-chroma-colors">
+                        {CHROMA_COLORS.map((c) => (
+                          <button
+                            key={c.value}
+                            className={`preflight-chroma-color-opt${chromaColor === c.value ? " preflight-chroma-color-opt--active" : ""}`}
+                            style={{ backgroundColor: c.value }}
+                            onClick={() => setChromaColor(c.value)}
+                            title={c.label}
+                            aria-label={c.label}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* ── Mirror + Studio toggles ── */}
                 <div className="preflight-video-toggles">
