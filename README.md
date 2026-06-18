@@ -355,6 +355,172 @@ lk agent create --secrets-file .env.local .   # First time
 lk agent deploy                                 # Subsequent deploys
 ```
 
+## Self-hosted
+
+Run the entire Orbit Meeting stack on your own infrastructure — no dependency on LiveKit Cloud, Supabase Cloud, or Vercel.
+
+### Architecture overview
+
+```text
+┌─────────────────────┐      ┌──────────────────┐
+│  Orbit Frontend     │─────▶│  LiveKit Server   │
+│  (Next.js / Docker) │      │  (open-source)    │
+│                     │      │  ws://lk:7880     │
+│  :3000              │      │  https://lk:7881  │
+└─────────────────────┘      └────────┬─────────┘
+       │                              │
+       │ HTTP API                     │ WebRTC
+       ▼                              ▼
+┌─────────────────────┐      ┌──────────────────┐
+│  Supabase           │      │  Orbit Agent      │
+│  (self-hosted)      │      │  (Python worker)  │
+│  auth + db          │      │  connects to LK   │
+└─────────────────────┘      └──────────────────┘
+```
+
+### 1. LiveKit Server (open-source)
+
+Instead of LiveKit Cloud, run the [open-source LiveKit server](https://github.com/livekit/livekit):
+
+```bash
+# With Docker (quickstart)
+docker run -d --name livekit \
+  -p 7880:7880 -p 7881:7881 -p 7882:7882/udp \
+  -e LIVEKIT_KEYS="mykey: mysecret" \
+  livekit/livekit-server \
+  --config-body "port: 7880
+bind_addresses:
+  - ''
+rtc:
+  port: 7882
+  use_external_ip: true
+  tcp_port: 7881
+keys:
+  mykey: mysecret
+"
+```
+
+> **Note**: For production, configure a proper TLS certificate on port 7881 (WebRTC requires HTTPS/WSS). Use Caddy, nginx, or a reverse proxy. Set `LIVEKIT_URL=wss://lk.yourdomain.com` in your env files.
+
+### 2. Supabase (self-hosted)
+
+Use [Supabase self-hosted with Docker](https://supabase.com/docs/guides/self-hosting/docker):
+
+```bash
+git clone https://github.com/supabase/supabase
+cd supabase/docker
+docker compose up -d
+```
+
+After startup, get your `anon` key and `URL` from the Supabase Studio at `http://localhost:8000`. Apply migrations:
+
+```bash
+# From the orbit-meeting repo
+for f in supabase/migrations/*.sql; do
+  psql "postgresql://postgres:postgres@localhost:5432/postgres" -f "$f"
+done
+```
+
+Set `NEXT_PUBLIC_SUPABASE_URL=http://localhost:8000` and `NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon key>` in your `.env.local`.
+
+### 3. Deploy the frontend
+
+**Option A — Docker (recommended):**
+
+```bash
+# Build the standalone image
+docker build -t orbit-frontend .
+
+# Run it
+docker run -d --name orbit-web \
+  -p 3000:3000 \
+  --env-file .env.local \
+  orbit-frontend
+```
+
+The provided `Dockerfile` builds a standalone Next.js server with all dependencies. Point your reverse proxy (Caddy, nginx) at `http://localhost:3000`.
+
+**Option B — Bare metal:**
+
+```bash
+pnpm build
+pnpm start  # Serves on :3000
+```
+
+### 4. Deploy the agent
+
+Build and run the translator worker — it connects to your LiveKit server as any other participant:
+
+```bash
+cd translator
+
+# Build the Docker image
+docker build -t orbit-agent .
+
+# Run it
+docker run -d --name orbit-agent \
+  --env-file .env.local \
+  orbit-agent
+```
+
+The agent's entrypoint (`agent.py`) uses LiveKit's `AgentServer` which connects to the LiveKit server via the credentials in `translator/.env.local`. It will auto-dispatch when a room requests the `"gemini-translator"` agent.
+
+> **Important**: The agent needs network access to both your LiveKit server and the Gemini API (`generativelanguage.googleapis.com`). No public HTTP port needed — it's a WebSocket client.
+
+### 5. All-in-one with Docker Compose
+
+```yaml
+# docker-compose.yml
+services:
+  livekit:
+    image: livekit/livekit-server
+    command: --config-body "port: 7880
+      bind_addresses: ['']
+      rtc: { port: 7882, use_external_ip: true, tcp_port: 7881 }
+      keys: { mykey: mysecret }"
+    ports:
+      - "7880:7880"
+      - "7881:7881"
+      - "7882:7882/udp"
+
+  supabase:
+    # See https://supabase.com/docs/guides/self-hosting/docker
+    # for the full docker-compose setup (gotrue, postgrest, etc.)
+
+  frontend:
+    build: .
+    ports:
+      - "3000:3000"
+    env_file: .env.local
+    depends_on:
+      - livekit
+      - supabase
+
+  agent:
+    build: ./translator
+    env_file: translator/.env.local
+    depends_on:
+      - livekit
+```
+
+### Environment summary for self-hosted
+
+| Variable | Value (self-hosted) |
+|----------|-------------------|
+| `LIVEKIT_URL` | `ws://localhost:7880` (or `wss://lk.yourdomain.com`) |
+| `LIVEKIT_API_KEY` | The key name from `LIVEKIT_KEYS` (e.g. `mykey`) |
+| `LIVEKIT_API_SECRET` | The key secret from `LIVEKIT_KEYS` (e.g. `mysecret`) |
+| `GEMINI_API_KEY` | Your Gemini API key (still required — no self-hosted LLM fallback yet) |
+| `NEXT_PUBLIC_SUPABASE_URL` | `http://localhost:8000` |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | From Supabase Studio → Settings → API |
+
+### Limitations of self-hosting
+
+- **Gemini API** still requires a Google API key — there is no on-device LLM fallback for translation (the Gemini Live API is purpose-built for low-latency speech translation)
+- **LiveKit server** in single-node mode may not scale to hundreds of concurrent rooms; LiveKit Cloud handles global distribution
+- **Supabase self-hosted** lacks some cloud features (automatic backups, built-in auth UI flows — you'll use Orbit's own auth pages)
+- **TLS/HTTPS** is required for WebRTC in production — plan for a reverse proxy with Let's Encrypt
+
 ## Configuration
 
 Caps in `src/lib/config.ts` and `translator/src/config.py` — adjust together:
