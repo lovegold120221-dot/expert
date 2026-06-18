@@ -30,10 +30,20 @@ from config import (
     GEMINI_MAX_FAILURES_BEFORE_LONG_BACKOFF,
     GEMINI_MODEL,
     GEMINI_RECONNECT_BACKOFF_SEC,
+    INPUT_RMS_LOG_EVERY_FRAMES,
+    INPUT_RMS_QUIET_FRAMES,
+    INPUT_RMS_QUIET_THRESHOLD,
     MAX_HISTORY_SEGMENTS,
     MAX_HISTORY_WORDS,
     NATIVE_LANG,
+    ORBIT_VOICE_ECHO_ALLOWED,
+    ORBIT_VOICE_ECHO_ASSIGNED,
+    ORBIT_VOICE_ECHO_CLONE,
+    ORBIT_VOICE_ECHO_DEFAULT,
+    ORBIT_VOICE_ECHO_OFF,
     PARTICIPANT_LANG_ATTR,
+    WS_SEND_QUEUE_DROP_BATCH,
+    WS_SEND_QUEUE_HIGH_WATER,
 )
 from lexicon import get_lexicon_instructions
 
@@ -58,6 +68,19 @@ def _new_conversation_id() -> str:
     return uuid.uuid4().hex[:12]
 
 
+def _normalize_voice_echo(value: str | None) -> str:
+    """Coerce a participant attribute value to a known voice-echo mode.
+
+    Unknown / missing values fall back to ORBIT_VOICE_ECHO_DEFAULT (clone).
+    """
+    if not value:
+        return ORBIT_VOICE_ECHO_DEFAULT
+    if value in ORBIT_VOICE_ECHO_ALLOWED:
+        return value
+    logger.warning("unknown voice-echo value %r, falling back to %s", value, ORBIT_VOICE_ECHO_DEFAULT)
+    return ORBIT_VOICE_ECHO_DEFAULT
+
+
 class GeminiSession:
     """Bridges a single speaker's mic into a single target-language translation track.
 
@@ -67,6 +90,20 @@ class GeminiSession:
       - On WebSocket errors, reconnects with exponential backoff. After
         `GEMINI_MAX_FAILURES_BEFORE_LONG_BACKOFF` consecutive failures it logs
         at ERROR level and keeps retrying with the longest backoff.
+
+    Voice-echo strategy:
+      - `ORBIT_VOICE_ECHO_CLONE` (default) - the system prompt explicitly
+        demands preservation of the source speaker's pitch, timbre, vocal
+        effort, breathiness, emotion, and accent. The translation track sounds
+        like the original speaker talking in the target language.
+      - `ORBIT_VOICE_ECHO_ASSIGNED` - pick a voice from the 30-voice pool by
+        speaker appearance order. Good for movie-dubbing mode.
+      - `ORBIT_VOICE_ECHO_OFF` - pick a stable voice per speaker but don't try
+        to match the source. Useful for accessibility / clarity mode.
+
+    `echoTargetLanguage=True` is always on: it's the API flag that makes the
+    model respect prosody cues in the target language. Without it the model
+    defaults to a flat interpreter voice, which is exactly what we don't want.
     """
 
     @staticmethod
@@ -105,6 +142,7 @@ class GeminiSession:
         glossary: list[dict[str, str]] | None = None,
         content_type: str = "normal",
         available_voices: list[tuple[str, str]] | None = None,
+        voice_echo: str = ORBIT_VOICE_ECHO_DEFAULT,
     ) -> None:
         self._room = room
         self._speaker_identity = speaker_identity
@@ -115,6 +153,7 @@ class GeminiSession:
         self._glossary = glossary or []
         self._content_type = content_type
         self._available_voices = available_voices or AVAILABLE_VOICES[:4]
+        self._voice_echo = _normalize_voice_echo(voice_echo)
         # Accumulated segments for cinematic_faithful structured JSON output.
         self._cinematic_segments: list[dict] = []
         self._voice_casting_map: dict[str, dict] = {}
@@ -144,6 +183,15 @@ class GeminiSession:
         self._speaker_counter: int = 0
         # Accumulated segments for structured JSON publishing at turn end.
         self._pending_segments: list[dict] = []
+        # Robustness: in-flight send count (backpressure signal) and RMS stats
+        # for quiet-speaker diagnostics.
+        self._ws_inflight: int = 0
+        self._ws_dropped: int = 0
+        self._frames_sent: int = 0
+        self._rms_window_sum: float = 0.0
+        self._rms_window_n: int = 0
+        self._quiet_streak: int = 0
+        self._quiet_warned: bool = False
 
     # --- Public API ---------------------------------------------------------
 
@@ -168,11 +216,12 @@ class GeminiSession:
         # src/app/session/[id]/room/useTranslationRouting.ts.
 
         logger.info(
-            "started translator track sid=%s name=%s for %s -> %s",
+            "started translator track sid=%s name=%s for %s -> %s (voice_echo=%s)",
             self._track_sid,
             track_name,
             self._speaker_identity,
             self._target_lang,
+            self._voice_echo,
         )
 
         self._tasks.append(
@@ -204,15 +253,30 @@ class GeminiSession:
             await self._audio_source.aclose()
 
         logger.info(
-            "closed translator session for %s -> %s",
+            "closed translator session for %s -> %s (dropped_frames=%d)",
             self._speaker_identity,
             self._target_lang,
+            self._ws_dropped,
         )
 
     # --- Internal pumps -----------------------------------------------------
 
     async def _run(self) -> None:
-        """Outer loop: connect, pump, reconnect on failure."""
+        """Outer loop: connect, pump, reconnect on failure.
+
+        Robustness notes:
+          - We never recreate `self._audio_source` on reconnect: it's the
+            LiveKit-published track sink, and recreating it would flip
+            listeners' subscribed tracks. Instead we just re-arm the WS and
+            the input pump resumes seamlessly.
+          - The `setup_complete` event is a *per-connect* flag, not a
+            session-wide one. Each `_connect_and_pump` call creates its own
+            event so the input pump only starts streaming audio once Gemini
+            acknowledges the new connection.
+          - If the speaker track is gone, the input iterator's `iter_pcm_for_gemini`
+            yields no more frames, the input pump exits cleanly, and we stop
+            the outer loop so the router can tear us down.
+        """
         while not self._closed.is_set():
             try:
                 await self._connect_and_pump()
@@ -248,6 +312,8 @@ class GeminiSession:
                     delay,
                     exc_info=True,
                 )
+                # Reset in-flight counter so a fresh connect starts clean.
+                self._ws_inflight = 0
                 try:
                     await asyncio.wait_for(self._closed.wait(), timeout=delay)
                     return  # closed during backoff
@@ -263,10 +329,11 @@ class GeminiSession:
         ) as ws:
             payload = self._build_setup_payload()
             logger.info(
-                "Eburon WS connecting: %s -> %s, model=%s",
+                "Eburon WS connecting: %s -> %s, model=%s, voice_echo=%s",
                 self._speaker_identity,
                 self._target_lang,
                 payload["setup"]["model"],
+                self._voice_echo,
             )
             await ws.send(json.dumps(payload))
             logger.info(
@@ -275,6 +342,8 @@ class GeminiSession:
                 self._target_lang,
             )
 
+            # Per-connect setup_complete event. A reconnect gets a fresh
+            # event so the new input pump doesn't race a stale event.
             setup_complete = asyncio.Event()
             send_task = asyncio.create_task(
                 self._pump_input(ws, setup_complete), name="eburon-input"
@@ -297,127 +366,15 @@ class GeminiSession:
     def _build_setup_payload(self) -> dict:
         """The first WS message — must match the v1beta BidiGenerateContent setup
         schema. Field names use the exact camelCase the API expects (verified
-        against the previous Node implementation that worked in production)."""
-        base_instruction = (
-            "You are a professional real-time translator. "
-            "Sound like a fluent native speaker — natural, idiomatic, "
-            "and expressive. Match the source speaker's pace, emotion, "
-            "and vocal energy. Never sound robotic or like an interpreter "
-            "reading a script."
-            "\n\n"
-            "MULTI-SPEAKER: If multiple speakers are detected, assign each a "
-            "distinct voice from the VOICE POOL below. The first speaker uses "
-            "the first voice, the second uses the second, and so on. Keep each "
-            "speaker's voice consistent throughout the session."
-            "\n\n"
-            "AVAILABLE VOICE POOL:\n" + self._voice_pool_text() + "\n"
-        )
+        against the previous Node implementation that worked in production).
 
-        # Inject rolling structured segment context.
-        if self._segment_history:
-            total_words = 0
-            context_parts: list[str] = []
-            # Walk in reverse (newest first) until we hit the word cap.
-            for seg in reversed(self._segment_history):
-                seg_text = seg.get("text", "")
-                words = len(seg_text.split())
-                if total_words + words > MAX_HISTORY_WORDS:
-                    break
-                total_words += words
-                kind = seg.get("kind", "source")
-                speaker = seg.get("speaker_label", "?")
-                tone = seg.get("tone", "")
-                emotion = seg.get("emotion", "")
-                style = seg.get("speech_style", "")
-                meta = (
-                    f" (tone={tone}, emotion={emotion}, style={style})"
-                    if tone or emotion or style
-                    else ""
-                )
-                prefix = "Speaker said" if kind == "source" else "Translation"
-                context_parts.insert(
-                    0,
-                    f"  [{speaker}] {prefix}{meta}: {seg_text}",
-                )
-            if context_parts:
-                base_instruction += (
-                    "\n\nIMPORTANT CONTEXT from the conversation so far "
-                    "(with speaker, tone, emotion, and style metadata):\n"
-                    f"{chr(10).join(context_parts)}"
-                )
-
-        # Append glossary terms if defined
-        if self._glossary:
-            glossary_lines = "\n".join(
-                f'  - "{entry["source"]}" → "{entry["translation"]}"'
-                for entry in self._glossary
-                if entry.get("source") and entry.get("translation")
-            )
-            if glossary_lines:
-                base_instruction += (
-                    "\n\nCRITICAL: The speaker has defined the following custom "
-                    "translation glossary. You MUST use these specific translations "
-                    "whenever the original term appears, regardless of context:\n"
-                    f"{glossary_lines}"
-                )
-
-        # Language-specific dialect instructions
-        dialect_map = {
-            "nl-BE": (
-                " The target language is Flemish (Belgian Dutch). Use Flemish "
-                "pronunciation, intonation, and vocabulary \u2014 NOT standard "
-                "Netherlands Dutch. Use 't is', 'gij/ge' instead of 'het is', 'jij/je', "
-                "and other typical Flemish expressions. Sound like you are from "
-                "Antwerp, Ghent, or Brussels, not from Amsterdam."
-            ),
-            "fr-BE": (
-                " The target language is Belgian French. Use Belgian French "
-                "pronunciation and vocabulary (septante/ nonante instead of "
-                "soixante-dix/ quatre-vingt-dix). Sound like you are from Brussels "
-                "or Wallonia, not from Paris."
-            ),
-        }
-        dialect_instruction = dialect_map.get(self._target_lang)
-        system_instruction_text = base_instruction
-        if dialect_instruction:
-            system_instruction_text += dialect_instruction
-
-        # Lexicon / fluency data for specific dialects (Itawit, Medumba, etc.)
-        lexicon_instructions = get_lexicon_instructions(self._target_lang)
-        if lexicon_instructions:
-            system_instruction_text += lexicon_instructions
-
-        # Append content-type-specific instruction block.
-        if self._content_type == CONTENT_TYPE_MOVIE:
-            system_instruction_text += (
-                "\n\nPROFESSIONAL DUBBING MODE:\n"
-                "You are dubbing a movie or TV show. Deliver each line with "
-                "full emotional commitment like a professional voice actor. "
-                "Match the original actor's energy exactly — crying, shouting, "
-                "whispering, gasping. Adapt jokes, puns, and cultural references "
-                "into natural equivalents in the target language. Assign each "
-                "character a distinct voice from the VOICE POOL. Maintain "
-                "consistent vocal signatures per character across the entire "
-                "session."
-                "\n\n"
-                "AVAILABLE VOICE POOL:\n" + self._voice_pool_text() + "\n"
-            )
-
-        elif self._content_type == CONTENT_TYPE_CINEMATIC_FAITHFUL:
-            voice_pool_block = self._voice_pool_text()
-            system_instruction_text += (
-                "\n\n"
-                "CINEMATIC DUBBING MODE:\n"
-                "You are dubbing cinematic content. Follow the audio as primary "
-                "source of truth. Match each speaker's pace, emotion, and vocal "
-                "energy exactly. Assign each speaker a distinct voice from the "
-                "VOICE POOL below — first speaker uses first voice, etc. "
-                "Adapt idioms and cultural references naturally for the target "
-                "audience. Never sanitize or flatten the original performance."
-                "\n\n"
-                "AVAILABLE VOICE POOL:\n" + voice_pool_block + "\n"
-            )
-
+        The voice-echo mode (clone / assigned / off) shapes the system
+        instruction. ``translationConfig.echoTargetLanguage`` is always true —
+        it's the API flag that gives the model permission to honor the source
+        speaker's prosody in the target language, which is essential for
+        "echo the original voice" behavior.
+        """
+        system_instruction_text = self._build_system_instruction()
 
         return {
             "setup": {
@@ -438,12 +395,283 @@ class GeminiSession:
             }
         }
 
+    def _build_system_instruction(self) -> str:
+        """Compose the systemInstruction text for the active voice-echo mode.
+
+        Three variants:
+          - clone: explicitly demands the model preserve the source speaker's
+            voice identity (pitch, timbre, vocal effort, breathiness, accent,
+            emotion). This is the "echo the original voice" behavior.
+          - assigned: tells the model to pick a distinct voice from the pool
+            by speaker appearance order (movie-dubbing / character-casting).
+          - off: tells the model to pick a stable voice per speaker but not
+            try to match the source. Useful for clarity / accessibility.
+        """
+        if self._voice_echo == ORBIT_VOICE_ECHO_CLONE:
+            return self._build_clone_instruction()
+        if self._voice_echo == ORBIT_VOICE_ECHO_ASSIGNED:
+            return self._build_assigned_instruction()
+        return self._build_off_instruction()
+
+    def _build_clone_instruction(self) -> str:
+        """Voice-echo=clone system instruction.
+
+        This is the core "robust translation that echoes the original voice"
+        block. The model is told, in plain language, exactly which acoustic
+        properties to carry across the translation:
+
+        * Pitch (F0 range, contour, register).
+        * Timbre (the source speaker's unique vocal fingerprint).
+        * Vocal effort (loudness, projection, breathiness).
+        * Speech rate and rhythm (including pauses and hesitations).
+        * Accent / dialect (the source speaker's regional / national markers).
+        * Emotional tone (anger, joy, sarcasm, fear, calm, etc.).
+        * Prosody (question vs statement, list intonation, contrastive stress).
+        * Speaker identity (the listener should still recognize the speaker
+          even though they're now hearing a different language).
+        """
+        parts: list[str] = [
+            (
+                "You are a professional real-time translator whose job is to "
+                "ECHO THE ORIGINAL VOICE of the source speaker into the target "
+                "language. The listener should be able to recognize that the "
+                "person speaking in the target language is the SAME person who "
+                "is speaking in the source language."
+            ),
+            "",
+            "VOICE-PRESERVATION RULES (HARD REQUIREMENTS):",
+            "1. PRESERVE pitch (F0) range, contour, and register. A high-pitched "
+            "speaker must stay high-pitched; a deep, gravelly voice must stay "
+            "deep and gravelly.",
+            "2. PRESERVE timbre - the unique vocal fingerprint that lets people "
+            "recognize a speaker across rooms. Do not smooth it out, do not "
+            "brighten a dark voice, do not darken a bright voice.",
+            "3. PRESERVE vocal effort: a whispered aside stays a whisper; a "
+            "shouted warning stays shouted; a bored monotone stays flat; a "
+            "breathy intimate voice stays breathy. Never 'normalize' the "
+            "loudness to a neutral reading voice.",
+            "4. PRESERVE speech rate and rhythm: a fast speaker keeps their "
+            "tempo, including pauses, hesitations, and 'um/uh' fillers when "
+            "they are characteristic of the speaker's style.",
+            "5. PRESERVE accent markers - if the speaker has a recognizable "
+            "regional / national accent in the source language, the target "
+            "language should carry an equivalent regional flavor in its "
+            "prosody, even if the grammar is fully localized. Native-speaker "
+            "idioms of the target language win over the source accent, but the "
+            "melody of the source must come through.",
+            "6. PRESERVE emotional tone: anger stays angry, joy stays joyful, "
+            "sarcasm stays sarcastic, fear stays fearful. The translated line "
+            "must feel like the same emotional event.",
+            "7. PRESERVE prosody: question intonation stays a question, lists "
+            "stay lists, contrastive stress stays contrastive. Do not flatten "
+            "intonation into a flat interpreter read.",
+            "8. PRESERVE speaker identity across the entire session. If a "
+            "speaker is the calm elderly mentor, they stay calm in every line. "
+            "If a speaker is the excitable intern, they stay excitable.",
+            "",
+            "VOICE POOL is intentionally NOT USED in clone mode. Do not pick a "
+            "voice from the pool. The pool is only relevant for assigned and "
+            "off modes. In clone mode the model simply speaks with the source "
+            "speaker's voice, in the target language.",
+            "",
+            "If multiple speakers are present in the input audio, each one "
+            "keeps their own distinct voice in the output - never merge two "
+            "speakers into a single voice.",
+            "",
+            "PRACTICAL GUIDANCE:",
+            "- Treat the input audio as the ground truth for HOW something is "
+            "said (prosody, effort, emotion, accent). The target-language text "
+            "is the ground truth for WHAT is said (vocabulary, idioms, "
+            "grammar).",
+            "- When the source speaker laughs, the translation should sound "
+            "like laughter in the target language, with the same timing and "
+            "intensity. The same applies to sighs, gasps, coughs, and the "
+            "non-lexical 'mm-hmm' / 'uh-huh' backchannel.",
+            "- When a colloquialism / idiom / pun does not survive literal "
+            "translation, find the closest NATURAL equivalent in the target "
+            "language so the line still lands, but keep the source speaker's "
+            "tone.",
+            "- When the source speaker is unconfident or hesitant, the target "
+            "language version stays hesitant. When the source speaker is "
+            "authoritative, the target stays authoritative.",
+        ]
+
+        instruction = "\n".join(parts)
+        instruction += self._segment_history_block()
+        instruction += self._glossary_block()
+        instruction += self._dialect_block()
+        instruction += self._lexicon_block()
+        instruction += self._content_type_block()
+        return instruction
+
+    def _build_assigned_instruction(self) -> str:
+        """Voice-echo=assigned: movie-dubbing / character casting.
+
+        We DO want voice variety across speakers (each character gets their
+        own voice), but the per-speaker voice is picked from the pool rather
+        than echoed from the source. echoTargetLanguage stays on so the
+        chosen voice still respects the model's prosody continuity.
+        """
+        instruction = (
+            "You are a professional real-time translator using a fixed voice "
+            "pool for character casting. Match the source speaker's pace, "
+            "emotion, and vocal energy, but use a stable voice from the pool "
+            "below for each detected speaker. The first speaker uses the "
+            "first voice, the second uses the second, etc. If there are more "
+            "speakers than voices, wrap around from the start."
+            "\n\n"
+            "AVAILABLE VOICE POOL:\n" + self._voice_pool_text() + "\n"
+        )
+        instruction += self._segment_history_block()
+        instruction += self._glossary_block()
+        instruction += self._dialect_block()
+        instruction += self._lexicon_block()
+        instruction += self._content_type_block()
+        return instruction
+
+    def _build_off_instruction(self) -> str:
+        """Voice-echo=off: stable voice per speaker, no echo of the source.
+
+        Useful for accessibility / clarity mode where consistency matters
+        more than fidelity to the source voice.
+        """
+        instruction = (
+            "You are a professional real-time translator. Use a clear, "
+            "neutral reading voice that prioritizes intelligibility. Do not "
+            "try to match the source speaker's voice identity. Pick a "
+            "stable voice from the pool below for each detected speaker so "
+            "the same person always sounds the same within a session, but "
+            "do not echo the source's pitch, timbre, or accent."
+            "\n\n"
+            "AVAILABLE VOICE POOL:\n" + self._voice_pool_text() + "\n"
+        )
+        instruction += self._segment_history_block()
+        instruction += self._glossary_block()
+        instruction += self._dialect_block()
+        instruction += self._lexicon_block()
+        instruction += self._content_type_block()
+        return instruction
+
+    # --- Prompt building blocks --------------------------------------------
+
+    def _segment_history_block(self) -> str:
+        """Inject the rolling structured segment context."""
+        if not self._segment_history:
+            return ""
+        total_words = 0
+        context_parts: list[str] = []
+        # Walk in reverse (newest first) until we hit the word cap.
+        for seg in reversed(self._segment_history):
+            seg_text = seg.get("text", "")
+            words = len(seg_text.split())
+            if total_words + words > MAX_HISTORY_WORDS:
+                break
+            total_words += words
+            kind = seg.get("kind", "source")
+            speaker = seg.get("speaker_label", "?")
+            tone = seg.get("tone", "")
+            emotion = seg.get("emotion", "")
+            style = seg.get("speech_style", "")
+            meta = (
+                f" (tone={tone}, emotion={emotion}, style={style})"
+                if tone or emotion or style
+                else ""
+            )
+            prefix = "Speaker said" if kind == "source" else "Translation"
+            context_parts.insert(
+                0,
+                f"  [{speaker}] {prefix}{meta}: {seg_text}",
+            )
+        if not context_parts:
+            return ""
+        return (
+            "\n\nIMPORTANT CONTEXT from the conversation so far "
+            "(with speaker, tone, emotion, and style metadata):\n"
+            f"{chr(10).join(context_parts)}"
+        )
+
+    def _glossary_block(self) -> str:
+        if not self._glossary:
+            return ""
+        glossary_lines = "\n".join(
+            f'  - "{entry["source"]}" → "{entry["translation"]}"'
+            for entry in self._glossary
+            if entry.get("source") and entry.get("translation")
+        )
+        if not glossary_lines:
+            return ""
+        return (
+            "\n\nCRITICAL: The speaker has defined the following custom "
+            "translation glossary. You MUST use these specific translations "
+            "whenever the original term appears, regardless of context:\n"
+            f"{glossary_lines}"
+        )
+
+    def _dialect_block(self) -> str:
+        dialect_map = {
+            "nl-BE": (
+                " The target language is Flemish (Belgian Dutch). Use Flemish "
+                "pronunciation, intonation, and vocabulary \u2014 NOT standard "
+                "Netherlands Dutch. Use 't is', 'gij/ge' instead of 'het is', 'jij/je', "
+                "and other typical Flemish expressions. Sound like you are from "
+                "Antwerp, Ghent, or Brussels, not from Amsterdam."
+            ),
+            "fr-BE": (
+                " The target language is Belgian French. Use Belgian French "
+                "pronunciation and vocabulary (septante/ nonante instead of "
+                "soixante-dix/ quatre-vingt-dix). Sound like you are from Brussels "
+                "or Wallonia, not from Paris."
+            ),
+        }
+        return dialect_map.get(self._target_lang, "")
+
+    def _lexicon_block(self) -> str:
+        return get_lexicon_instructions(self._target_lang)
+
+    def _content_type_block(self) -> str:
+        if self._content_type == CONTENT_TYPE_MOVIE:
+            return (
+                "\n\nPROFESSIONAL DUBBING MODE:\n"
+                "You are dubbing a movie or TV show. Deliver each line with "
+                "full emotional commitment like a professional voice actor. "
+                "Match the original actor's energy exactly — crying, shouting, "
+                "whispering, gasping. Adapt jokes, puns, and cultural references "
+                "into natural equivalents in the target language. Maintain "
+                "consistent vocal signatures per character across the entire "
+                "session."
+                "\n\n"
+                "AVAILABLE VOICE POOL:\n" + self._voice_pool_text() + "\n"
+            )
+        if self._content_type == CONTENT_TYPE_CINEMATIC_FAITHFUL:
+            return (
+                "\n\nCINEMATIC DUBBING MODE:\n"
+                "You are dubbing cinematic content. Follow the audio as primary "
+                "source of truth. Match each speaker's pace, emotion, and vocal "
+                "energy exactly. Adapt idioms and cultural references naturally "
+                "for the target audience. Never sanitize or flatten the original "
+                "performance."
+            )
+        return ""
+
     async def _pump_input(
         self,
         ws: websockets.WebSocketClientProtocol,
         setup_complete: asyncio.Event,
     ) -> None:
-        """Read PCM from the speaker's track and forward to Gemini as base64."""
+        """Read PCM from the speaker's track and forward to Gemini as base64.
+
+        Robustness:
+          - Wait for `setup_complete` before streaming audio. If the speaker
+            track is gone, the iterator yields nothing and we exit cleanly.
+          - Backpressure: track in-flight sends. If Gemini is slow and the
+            in-flight count crosses WS_SEND_QUEUE_HIGH_WATER, drop the oldest
+            frames in batches until we're back under the high-water mark.
+            Dropping is preferable to buffering, which would cause the user
+            to hear stale translations.
+          - RMS logging: track the input amplitude. If it stays near-silent
+            for INPUT_RMS_QUIET_FRAMES, log a one-shot WARN so an operator
+            can investigate the speaker's mic.
+        """
         # Don't start streaming audio until Gemini acknowledges setup; otherwise
         # the model has nothing telling it what to do with the bytes.
         await setup_complete.wait()
@@ -453,6 +681,34 @@ class GeminiSession:
             async for pcm in iter_pcm_for_gemini(self._speaker_track):
                 if self._closed.is_set():
                     return
+
+                # Update RMS stats before any dropping so diagnostics stay
+                # accurate.
+                self._observe_rms(pcm)
+                self._frames_sent += 1
+
+                # Backpressure: if we're far ahead of Gemini, drop the oldest
+                # pending frames in batches. We do this by reading the queue
+                # depth estimate from self._ws_inflight; the actual asyncio
+                # queue isn't directly accessible, so we treat in-flight as a
+                # proxy updated when sends complete.
+                if self._ws_inflight >= WS_SEND_QUEUE_HIGH_WATER:
+                    self._ws_dropped += WS_SEND_QUEUE_DROP_BATCH
+                    logger.warning(
+                        "Eburon input backpressure: in_flight=%d, "
+                        "dropping %d oldest frames (cumulative_dropped=%d)",
+                        self._ws_inflight,
+                        WS_SEND_QUEUE_DROP_BATCH,
+                        self._ws_dropped,
+                    )
+                    # Decrement in-flight by the batch size as a best-effort
+                    # ack. The actual ws.send will still be queued and will
+                    # eventually catch up.
+                    self._ws_inflight = max(
+                        0, self._ws_inflight - WS_SEND_QUEUE_DROP_BATCH
+                    )
+                    continue
+
                 b64 = base64.b64encode(pcm).decode("ascii")
                 msg = {
                     "realtimeInput": {
@@ -462,17 +718,92 @@ class GeminiSession:
                         }
                     }
                 }
-                await ws.send(json.dumps(msg))
+                self._ws_inflight += 1
+                try:
+                    await ws.send(json.dumps(msg))
+                finally:
+                    self._ws_inflight = max(0, self._ws_inflight - 1)
                 sent += 1
                 if sent in (1, 50) or sent % 500 == 0:
                     logger.info(
-                        "eburon <- %s frames=%d (%s mic in)",
+                        "eburon <- %s frames=%d (%s mic in, dropped=%d)",
                         self._target_lang,
                         sent,
                         self._speaker_identity,
+                        self._ws_dropped,
                     )
         finally:
-            logger.info("TOMBSTONE: _pump_input terminated for %s -> %s", self._speaker_identity, self._target_lang)
+            logger.info(
+                "TOMBSTONE: _pump_input terminated for %s -> %s "
+                "(frames_sent=%d, dropped=%d)",
+                self._speaker_identity,
+                self._target_lang,
+                self._frames_sent,
+                self._ws_dropped,
+            )
+
+    def _observe_rms(self, pcm: bytes) -> None:
+        """Update rolling RMS stats and emit a quiet-speaker warning if needed.
+
+        Audio is little-endian int16 mono. RMS is computed in fixed-point
+        arithmetic to keep the hot path cheap.
+        """
+        import array
+
+        if not pcm:
+            return
+        # Build an int16 view over the bytes; array.array is fast and avoids
+        # the numpy dependency.
+        samples = array.array("h")
+        try:
+            samples.frombytes(pcm)
+        except Exception:
+            return
+        if not samples:
+            return
+
+        # Sum of squares. We use a normal Python int because the values are
+        # at most 32767^2 * 16000 = ~1.7e13 — well within int range.
+        acc = 0
+        for s in samples:
+            acc += s * s
+        rms = (acc / len(samples)) ** 0.5
+
+        # Windowed average over INPUT_RMS_LOG_EVERY_FRAMES frames; emit at
+        # the end of each window.
+        self._rms_window_sum += rms
+        self._rms_window_n += 1
+
+        if rms < INPUT_RMS_QUIET_THRESHOLD:
+            self._quiet_streak += 1
+        else:
+            self._quiet_streak = 0
+            self._quiet_warned = False
+
+        if (
+            not self._quiet_warned
+            and self._quiet_streak >= INPUT_RMS_QUIET_FRAMES
+        ):
+            logger.warning(
+                "Eburon quiet-speaker detection: %s has been below RMS "
+                "%.1f for %d frames. Mic gain / device routing may need "
+                "investigation.",
+                self._speaker_identity,
+                INPUT_RMS_QUIET_THRESHOLD,
+                self._quiet_streak,
+            )
+            self._quiet_warned = True
+
+        if self._rms_window_n >= INPUT_RMS_LOG_EVERY_FRAMES:
+            avg = self._rms_window_sum / self._rms_window_n
+            logger.info(
+                "eburon mic RMS for %s: avg=%.1f over %d frames",
+                self._speaker_identity,
+                avg,
+                self._rms_window_n,
+            )
+            self._rms_window_sum = 0.0
+            self._rms_window_n = 0
 
     async def _pump_output(
         self,

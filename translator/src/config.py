@@ -44,6 +44,36 @@ CONTENT_TYPE_CINEMATIC_FAITHFUL = "cinematic_faithful"
 # Sentinel meaning "no translation, native passthrough."
 NATIVE_LANG = "none"
 
+# --- Voice echo strategy ---
+
+# Participant attribute carrying the voice-echo mode for this speaker.
+# Allowed values: ORBIT_VOICE_ECHO_CLONE / _ASSIGNED / _OFF.
+ORBIT_VOICE_ECHO_ATTR = "orbit_voice_echo"
+
+# "clone" (default) - preserve the original speaker's voice identity
+# (pitch, timbre, vocal effort, breathiness, emotion). Uses
+# translationConfig.echoTargetLanguage=True and a strong voice-mimic prompt.
+ORBIT_VOICE_ECHO_CLONE = "clone"
+
+# "assigned" - assign a distinct voice from AVAILABLE_VOICES by speaker
+# appearance order (legacy multi-speaker behavior). Uses echoTargetLanguage
+# too so the chosen voice still benefits from the model's prosody continuity.
+ORBIT_VOICE_ECHO_ASSIGNED = "assigned"
+
+# "off" - turn the voice-echo off. Pick a stable voice from the pool per
+# speaker so each speaker sounds consistent within a session, but don't try
+# to match the source's voice. Useful for accessibility / clarity mode.
+ORBIT_VOICE_ECHO_OFF = "off"
+
+# Default voice-echo mode applied when the participant attribute is missing
+# or unparseable. clone = strongest user experience.
+ORBIT_VOICE_ECHO_DEFAULT = ORBIT_VOICE_ECHO_CLONE
+
+# Allowed set - guarded by the router; unknown values fall back to default.
+ORBIT_VOICE_ECHO_ALLOWED: frozenset[str] = frozenset(
+    {ORBIT_VOICE_ECHO_CLONE, ORBIT_VOICE_ECHO_ASSIGNED, ORBIT_VOICE_ECHO_OFF}
+)
+
 # --- Router behavior ---
 
 # Debounce window for room state changes before reconciling sessions.
@@ -52,6 +82,25 @@ RECONCILE_DEBOUNCE_SEC = 0.25
 # How long to keep a session warm after its last demand disappears
 # (speaker mutes, or the last listener for a target language leaves).
 SESSION_GRACE_SEC = 10.0
+
+# --- Robustness tuning ---
+
+# Periodic RMS log cadence (frames between logs). One frame ~20ms at 16kHz.
+# 250 frames = ~5s; quiet speakers are surfaced to the operator here.
+INPUT_RMS_LOG_EVERY_FRAMES = 250
+
+# If the running RMS stays below this threshold for INPUT_RMS_QUIET_FRAMES
+# in a row, we log a one-shot WARN so the operator can check the speaker's
+# mic gain. Gemini Live still hears it, but downstream STT degrades.
+INPUT_RMS_QUIET_THRESHOLD = 200.0
+INPUT_RMS_QUIET_FRAMES = 1000  # ~20s of near-silence
+
+# Backpressure guard: if the WebSocket send queue grows past this many
+# pending messages we start dropping the oldest audio frames. We only do
+# this when the consumer (Gemini) is the bottleneck - in normal operation
+# the queue is 0-1 messages.
+WS_SEND_QUEUE_HIGH_WATER = 32
+WS_SEND_QUEUE_DROP_BATCH = 8
 
 # --- Voice pool for multi-speaker translation ---
 

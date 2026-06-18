@@ -4,7 +4,7 @@
 ## Anchored Summary
 
 ### Done
-- **Canvas chroma key compositing** — real green-screen background replacement with `requestAnimationFrame` loop, `getImageData`/`putImageData` per-pixel processing, configurable chroma color (green/blue/red/magenta), soft edge blending, ResizeObserver canvas sizing, mirror via canvas transform
+- **ML background segmentation** — MediaPipe Selfie Segmenter (`@mediapipe/tasks-vision`) for real-time person/background separation via GPU-accelerated inference, runs every N frames (~10fps) with cached mask, covers both Blur (blurs only the background leaving person sharp) and image backgrounds (places person on top of any image), uses `requestAnimationFrame` compositing loop with `getImageData`/`putImageData` mask compositing, ResizeObserver canvas sizing, mirror via canvas transform, model loads lazily on first effect selection with "Loading AI model…" indicator
 - Preset thumbnails changed to 16:9 (48×27px)
 - Video studio background presets: None, Blur, 5 studio bgs, custom upload, mirror toggle, studio effect (all saved to Supabase profile)
 - `supabase/migrations/012_studio_effect.sql`
@@ -2287,3 +2287,77 @@ Agent starts, connects to LiveKit Cloud (`wss://eburon-meet-15gd8gwg.livekit.clo
 - CSS/UI preservation: All existing video preview layout, device selection, profile persistence, and design system classes preserved. Chroma section added as a new row below bg bar.
 - Known issues: None
 - Next step: Test with a real webcam to verify green screen removal quality
+
+## TASK-20260618-110000: ML person segmentation for background effects
+
+### START RECORD
+- STATUS: COMPLETED
+- Start time: 2026-06-18T11:00:00Z
+- User request: "do the proper background segmentation for video. Something like if the user selects the blur effect, it should blur the background. If the user uploads an image, it should use that as the user's video background, including the presets that were added already in the app."
+- Preservation constraints: Preserve existing video preview layout, device selection, profile persistence, studio effect/mirror toggles, and CSS design system.
+- Success criteria:
+  - Blur effect blurs only the background (person stays sharp) via ML segmentation
+  - Image backgrounds (presets + custom uploads) place person on top using mask
+  - No green screen / chroma key needed — works with any background
+  - Model loads lazily on first effect selection
+  - Build and lint pass
+
+### TODO
+- [x] Install `@mediapipe/tasks-vision` (v0.10.35)
+- [x] Create `src/lib/segmenter.ts` — singleton ImageSegmenter with lazy init + cached mask
+- [x] Rewrite compositing loop: draw video on temp canvas → build background (blurred video or image) → get mask → composite person on top via per-pixel mask check
+- [x] Handle fast path (mask dimensions match canvas) and scaled path
+- [x] Show "Loading AI model…" spinner while model downloads
+- [x] Remove chroma key state, UI, and CSS
+- [x] Verify build + lint pass
+
+### FINAL REPORT
+- STATUS: COMPLETED
+- End time: 2026-06-18T11:30:00Z
+- Files changed:
+  - `src/lib/segmenter.ts` (NEW) — Singleton `ImageSegmenter` loader using `@mediapipe/tasks-vision` FilesetResolver, lazy initialization, GPU delegate, per-frame `getOrRefreshMask()` that runs segmentation every N frames (skip=3, ~10fps) and caches the category mask as `Uint8Array` with width/height metadata
+  - `src/app/session/[id]/page.tsx` — Removed all chroma key state (`chromaKeyEnabled`, `chromaColor`, `CHROMA_COLORS`). Added `segmenterStatus` state, lazy init effect (fires on first non-"none" background). Rewrote compositing loop: draws raw video on temp canvas → builds background layer (blurred video via `ctx.filter="blur(14px)"` or background image via `drawImage`) → gets mask from segmenter → composites pixel-by-pixel using mask (fast path when dimensions match, scaled path otherwise). Mirror handled via canvas transform. "None" fast-paths directly to `drawImage`. While model loads, shows blend overlay. Video hidden via CSS when canvas active.
+  - `src/app/globals.css` — Replaced `.preflight-chroma-*` styles with `.preflight-model-loading` styles (flex row with spinner + text)
+  - `package.json` — Added `@mediapipe/tasks-vision@^0.10.35`
+- Validation performed:
+  - `pnpm build` — 17 routes compiled successfully (TypeScript + Turbopack)
+  - `npx eslint src/app/session/\[id\]/page.tsx src/lib/segmenter.ts` — 0 errors
+- CSS/UI preservation: All existing video preview layout, device selection, profile persistence, mirror/studio toggles, and design system classes preserved. Chroma key removed. Model loading indicator added.
+- Known issues: None
+- Next step: Test with real webcam to verify segmentation quality and performance
+
+## TASK-20260618-120000: Robust translation that echoes the original voice
+
+### START RECORD
+- STATUS: IN PROGRESS
+- Start time: 2026-06-18T12:00:00Z
+- User request: "make the translation robust echoing the original voice"
+- Preservation constraints:
+  - Keep `gemini-translator` dispatch name, both in agent.py and token route.
+  - Keep all existing public API: `TranslationRouter`, `GeminiSession.start/aclose`, `setup_payload` shape, track naming `tx:<speaker>:<source>:<target_lang>`, `lk.translation` text-stream attributes, demand-reconciliation rules (single-user vs multi-user, screen-share override, NATIVE_LANG sentinel, 10s grace).
+  - Keep router test suite green (15 tests, all pure-logic) and don't change router public surface.
+  - Keep current text-stream JSON payload schemas (`structured_segments`, `cinematic_segments`).
+  - Don't remove `echoTargetLanguage: true` — it stays on; we just align the prompt to actually *use* it for voice preservation.
+- Success criteria:
+  - Original-speaker voice is preserved in translation output: same pitch range, same vocal effort, same breathiness, same emotional tone. Speaker identity carries across the translation track.
+  - Translation is robust to network drops (reconnects without losing the audio source), to long pauses (no spurious teardown), to loud bursts (no buffer overflow), and to noisy/quiet speakers (auto-gain logging).
+  - New `orbit_voice_echo` participant attribute controls voice strategy per speaker:
+    - `"clone"` (default) — preserve original speaker's voice identity as closely as possible.
+    - `"assigned"` — pick from the existing 30-voice pool by speaker appearance order (legacy behavior).
+    - `"off"` — disable echo, just translate plainly.
+  - New tests pass (target: 15 → 18+).
+  - Ruff lint + format pass.
+  - Frontend token route constants mirror config.py values.
+  - README.md Phase 3 section updated to describe the new voice-echo strategy.
+
+### TODO
+- [ ] Add `ORBIT_VOICE_ECHO_ATTR` + `ORBIT_VOICE_ECHO_*` constants in `translator/src/config.py` and `src/lib/config.ts`
+- [ ] Refactor `_build_setup_payload` in `session.py` to branch on voice-echo mode and build a much stronger "preserve original voice" prompt when `clone` is selected
+- [ ] Pass `voice_echo` from `TranslationRouter._reconcile` into `GeminiSession` constructor
+- [ ] Harden `GeminiSession._run` reconnect: re-arm `setup_complete` event, keep audio source alive across reconnects, never let the source get stuck after a `WebSocketException`
+- [ ] Harden `_pump_input`: drop stale frames when WS send is slow (backpressure), periodic log of RMS for quiet-speaker detection
+- [ ] Add `tests/test_session_prompt.py` — tests the new prompt builder for each voice-echo mode
+- [ ] Add `tests/test_router.py` case — `voice_echo` attribute is correctly propagated into the session constructor
+- [ ] Run `uv run ruff check`, `uv run ruff format --check`, `uv run pytest`
+- [ ] Update `README.md` Phase 3 block to describe the voice-echo strategy
+- [ ] Commit

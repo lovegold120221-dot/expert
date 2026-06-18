@@ -225,3 +225,60 @@ def test_screen_share_audio_with_mic_mixed():
     assert ("sharer", "ss-aud-1", "en") in sessions
     # Mic audio -> NOT translated to same lang (same-language skip)
     assert ("sharer", "mic-1", "en") not in sessions
+
+
+# --- voice-echo attribute propagation --------------------------------------
+
+
+def test_router_resolves_voice_echo_from_participant_attribute():
+    """_resolve_voice_echo normalizes the orbit_voice_echo attribute to one of
+    the three allowed values. Unknown values fall back to the default (clone)."""
+    from router import _resolve_voice_echo
+    from config import (
+        ORBIT_VOICE_ECHO_ASSIGNED,
+        ORBIT_VOICE_ECHO_CLONE,
+        ORBIT_VOICE_ECHO_DEFAULT,
+        ORBIT_VOICE_ECHO_OFF,
+    )
+
+    # Missing attribute → default (clone)
+    assert _resolve_voice_echo(None) == ORBIT_VOICE_ECHO_DEFAULT
+    assert _resolve_voice_echo({}) == ORBIT_VOICE_ECHO_DEFAULT
+
+    # Explicit values round-trip
+    assert _resolve_voice_echo({"orbit_voice_echo": "clone"}) == ORBIT_VOICE_ECHO_CLONE
+    assert _resolve_voice_echo({"orbit_voice_echo": "assigned"}) == ORBIT_VOICE_ECHO_ASSIGNED
+    assert _resolve_voice_echo({"orbit_voice_echo": "off"}) == ORBIT_VOICE_ECHO_OFF
+
+    # Unknown value falls back to default
+    assert _resolve_voice_echo({"orbit_voice_echo": "echo"}) == ORBIT_VOICE_ECHO_DEFAULT
+    assert _resolve_voice_echo({"orbit_voice_echo": ""}) == ORBIT_VOICE_ECHO_DEFAULT
+
+
+def test_router_propagates_voice_echo_into_session_constructor(monkeypatch):
+    """When the router starts a session, it must pass the participant's
+    voice_echo attribute into GeminiSession so the prompt matches the intent.
+    """
+    from config import ORBIT_VOICE_ECHO_ASSIGNED
+    captured = {}
+
+    class FakeSession:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+        async def start(self):
+            return None
+
+    monkeypatch.setattr("router.GeminiSession", FakeSession)
+
+    # Set up a single-user room so a session is desired
+    p1 = _fake_participant("p1", "en")
+    p1.attributes = {PARTICIPANT_LANG_ATTR: "en", "orbit_voice_echo": "assigned"}
+    router = _router_with([p1])
+
+    # Drive a single reconcile
+    import asyncio
+    asyncio.run(router._reconcile())
+
+    assert captured, "GeminiSession was not constructed"
+    assert captured.get("voice_echo") == ORBIT_VOICE_ECHO_ASSIGNED

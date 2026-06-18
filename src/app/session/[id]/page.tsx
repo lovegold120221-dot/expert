@@ -5,6 +5,12 @@ import { useRouter } from "next/navigation";
 import { PICKER_LANGUAGES } from "@/lib/languages";
 import { useUser } from "@/context/UserContext";
 import { isMobile } from "@/lib/permissions";
+import {
+  initSegmenter,
+  getOrRefreshMask,
+  isSegmenterReady,
+  getSegmenterStatus,
+} from "@/lib/segmenter";
 
 const STORAGE_KEY_NAME = "lt.displayName";
 const STORAGE_KEY_LANG = "lt.lang";
@@ -60,17 +66,10 @@ export default function PreFlightPage({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const videoBoxRef = useRef<HTMLDivElement>(null);
   const animFrameRef = useRef<number>(0);
-  const [chromaKeyEnabled, setChromaKeyEnabled] = useState(false);
-  const [chromaColor, setChromaColor] = useState("#00ff00");
+  const tempCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const bgImageRef = useRef<HTMLImageElement | null>(null);
-  const customBgDataRef = useRef<string | null>(null);
-
-  const CHROMA_COLORS = [
-    { label: "Green", value: "#00ff00" },
-    { label: "Blue", value: "#0000ff" },
-    { label: "Red", value: "#ff0000" },
-    { label: "Magenta", value: "#ff00ff" },
-  ];
+  const [segmenterStatus, setSegmenterStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const segmenterInitRef = useRef(false);
 
   const hasImageBg = useMemo(() => {
     return videoBackground !== "none" && videoBackground !== "blur";
@@ -86,25 +85,48 @@ export default function PreFlightPage({
     { id: "bg-studio/bg5.jpg", label: "Studio 5", thumb: "/bg-studio/bg5.jpg" },
   ];
 
+  // ── Lazy-init the segmenter when user picks a background effect ──────────
+  useEffect(() => {
+    if (videoBackground === "none") return;
+    if (segmenterInitRef.current) return;
+
+    segmenterInitRef.current = true;
+    setSegmenterStatus("loading");
+
+    initSegmenter().then(() => {
+      setSegmenterStatus(isSegmenterReady() ? "ready" : "error");
+    });
+  }, [videoBackground]);
+
+  // Poll segmenter status (init is async, status updates via the getter)
+  useEffect(() => {
+    if (segmenterStatus !== "loading") return;
+    const id = setInterval(() => {
+      const s = getSegmenterStatus();
+      if (s !== "loading") {
+        setSegmenterStatus(s);
+        clearInterval(id);
+      }
+    }, 200);
+    return () => clearInterval(id);
+  }, [segmenterStatus]);
+
   // Load background image into ref when it changes
   useEffect(() => {
     if (videoBackground === "none" || videoBackground === "blur") {
       bgImageRef.current = null;
-      customBgDataRef.current = null;
       return;
     }
 
     if (videoBackground.startsWith("custom-")) {
       const entry = customBgs.find((b) => `custom-${b.name}` === videoBackground);
       if (entry) {
-        customBgDataRef.current = entry.data;
         const img = new Image();
         img.crossOrigin = "anonymous";
         img.src = entry.data;
         img.onload = () => { bgImageRef.current = img; };
       }
     } else {
-      customBgDataRef.current = null;
       const img = new Image();
       img.crossOrigin = "anonymous";
       img.src = `/${videoBackground}`;
@@ -112,12 +134,19 @@ export default function PreFlightPage({
     }
   }, [videoBackground, customBgs]);
 
-  // ── Canvas compositing loop ─────────────────────────────────────────────
+  // ── Canvas compositing loop (ML person segmentation) ────────────────────
   useEffect(() => {
     const videoEl = videoRef.current;
     const canvasEl = canvasRef.current;
     const boxEl = videoBoxRef.current;
     if (!canvasEl || !videoEl || !boxEl) return;
+
+    // Reusable temp canvas for clean video frames
+    if (!tempCanvasRef.current) {
+      tempCanvasRef.current = document.createElement("canvas");
+    }
+    const tempCanvas = tempCanvasRef.current;
+    const tempCtx = tempCanvas.getContext("2d")!;
 
     // Match canvas pixel dimensions to container
     function sizeCanvas() {
@@ -139,6 +168,19 @@ export default function PreFlightPage({
 
     let running = true;
 
+    // Compute cover-fill draw rect for a source w×h onto target w×h
+    function coverRect(
+      sw: number,
+      sh: number,
+      tw: number,
+      th: number
+    ): { x: number; y: number; w: number; h: number } {
+      const scale = Math.max(tw / sw, th / sh);
+      const w = sw * scale;
+      const h = sh * scale;
+      return { x: (tw - w) / 2, y: (th - h) / 2, w, h };
+    }
+
     function composite() {
       if (!running) return;
 
@@ -150,6 +192,9 @@ export default function PreFlightPage({
       }
 
       sizeCanvas();
+      // Also size temp canvas
+      tempCanvas.width = c.width;
+      tempCanvas.height = c.height;
 
       const cw = c.width;
       const ch = c.height;
@@ -158,89 +203,129 @@ export default function PreFlightPage({
         return;
       }
 
-      // 1. Draw background image (if available)
+      const vEl = videoRef.current;
+      if (!vEl || vEl.readyState < 2 || vEl.videoWidth === 0) {
+        // No video yet — just show black
+        ctx.clearRect(0, 0, cw, ch);
+        animFrameRef.current = requestAnimationFrame(composite);
+        return;
+      }
+
+      const vw = vEl.videoWidth;
+      const vh = vEl.videoHeight;
+      const vr = coverRect(vw, vh, cw, ch);
+
+      // ── Step 1: Draw the raw video frame onto the temp canvas ──────
+      // (mirror handled via transform)
+      if (mirrorVideo) {
+        tempCtx.save();
+        tempCtx.translate(cw, 0);
+        tempCtx.scale(-1, 1);
+        tempCtx.drawImage(vEl, vr.x, vr.y, vr.w, vr.h);
+        tempCtx.restore();
+      } else {
+        tempCtx.drawImage(vEl, vr.x, vr.y, vr.w, vr.h);
+      }
+
+      const isBlank = videoBackground === "none";
+
+      if (isBlank) {
+        // No effect — just copy video frame directly
+        ctx.drawImage(tempCanvas, 0, 0);
+        animFrameRef.current = requestAnimationFrame(composite);
+        return;
+      }
+
+      // ── Step 2: Get segmentation mask (before building bg) ─────────
+      // Check mask first so we can skip expensive bg building if model
+      // isn't ready yet — just show plain video during loading.
+      const now = performance.now();
+      const { mask, width: mw, height: mh } = getOrRefreshMask(vEl, now);
+
+      if (!mask || mw === 0) {
+        // Model not ready yet — show plain video (no overlay, no bg)
+        ctx.drawImage(tempCanvas, 0, 0);
+        animFrameRef.current = requestAnimationFrame(composite);
+        return;
+      }
+
+      // ── Step 3: Build the background layer on the main canvas ──────
+      const isBgBlur = videoBackground === "blur";
       const bgImg = bgImageRef.current;
-      if (bgImg && bgImg.complete && bgImg.naturalWidth > 0) {
-        // Cover-fill the background image onto the canvas
-        const scaleX = cw / bgImg.naturalWidth;
-        const scaleY = ch / bgImg.naturalHeight;
-        const scale = Math.max(scaleX, scaleY);
-        const bw = bgImg.naturalWidth * scale;
-        const bh = bgImg.naturalHeight * scale;
-        const bx = (cw - bw) / 2;
-        const by = (ch - bh) / 2;
-        ctx.drawImage(bgImg, bx, by, bw, bh);
+      const hasBgImg = bgImg && bgImg.complete && bgImg.naturalWidth > 0;
+
+      if (isBgBlur) {
+        // Blurred video as background (blur the whole frame, then cut
+        // out the person and paste them sharp on top)
+        ctx.filter = "blur(14px)";
+        ctx.drawImage(tempCanvas, 0, 0);
+        ctx.filter = "none";
+      } else if (hasBgImg) {
+        // Cover-fill the background image
+        const bgr = coverRect(bgImg.naturalWidth, bgImg.naturalHeight, cw, ch);
+        ctx.drawImage(bgImg, bgr.x, bgr.y, bgr.w, bgr.h);
       } else {
         // Fallback: clear to dark
         ctx.clearRect(0, 0, cw, ch);
       }
 
-      // 2. Draw video frame on top
-      const vEl = videoRef.current;
-      if (vEl && vEl.readyState >= 2) {
-        const vw = vEl.videoWidth;
-        const vh = vEl.videoHeight;
-        if (vw > 0 && vh > 0) {
-          // Cover-fill the video onto the canvas
-          const scaleX = cw / vw;
-          const scaleY = ch / vh;
-          const scale = Math.max(scaleX, scaleY);
-          const drawW = vw * scale;
-          const drawH = vh * scale;
-          const drawX = (cw - drawW) / 2;
-          const drawY = (ch - drawH) / 2;
+      // ── Step 4: Read background pixels ─────────────────────────────
+      const bgData = ctx.getImageData(0, 0, cw, ch);
 
-          if (mirrorVideo) {
-            ctx.save();
-            ctx.translate(cw, 0);
-            ctx.scale(-1, 1);
-            ctx.drawImage(vEl, drawX, drawY, drawW, drawH);
-            ctx.restore();
-          } else {
-            ctx.drawImage(vEl, drawX, drawY, drawW, drawH);
+      // ── Step 5: Read video pixels from temp canvas ─────────────────
+      const videoData = tempCtx.getImageData(0, 0, cw, ch);
+      const vd = videoData.data;
+      const bd = bgData.data;
+
+      // ── Step 6: Alpha-blend using person-confidence mask ───────────
+      // mask is Float32Array at video-native resolution (mw × mh).
+      // The video was drawn onto temp canvas at cover-rect (vr), so
+      // canvas pixels must be mapped through the cover-fill crop to
+      // find the correct mask pixel.
+      // canvas_y → mask_y:  maskY = (canvas_y - vr.y) * mh / vr.h
+      const maskScaleX = mw / vr.w;
+      const maskScaleY = mh / vr.h;
+      const maskOffsetX = -vr.x * maskScaleX;
+      const maskOffsetY = -vr.y * maskScaleY;
+      const output = new Uint8ClampedArray(bd); // start with background
+
+      for (let y = 0; y < ch; y++) {
+        const maskY = Math.floor(y * maskScaleY + maskOffsetY);
+        if (maskY < 0 || maskY >= mh) {
+          // Outside mask bounds — keep background
+          continue;
+        }
+        const maskRowOffset = maskY * mw;
+        const canvasRowStart = y * cw * 4;
+
+        for (let x = 0; x < cw; x++) {
+          const maskX = Math.floor(x * maskScaleX + maskOffsetX);
+          if (maskX < 0 || maskX >= mw) {
+            // Outside mask bounds — keep background
+            continue;
           }
 
-          // 3. Chroma key: remove green pixels to reveal background
-          if (chromaKeyEnabled) {
-            const imageData = ctx.getImageData(0, 0, cw, ch);
-            const data = imageData.data;
+          const conf = mask[maskRowOffset + maskX];
+          const pix = canvasRowStart + x * 4;
 
-            // Parse chroma color
-            const r = parseInt(chromaColor.slice(1, 3), 16);
-            const g = parseInt(chromaColor.slice(3, 5), 16);
-            const b = parseInt(chromaColor.slice(5, 7), 16);
-
-            // Tolerance and softness for natural keying
-            const tolerance = 60;
-            const softness = 20;
-
-            for (let i = 0; i < data.length; i += 4) {
-              const pr = data[i];
-              const pg = data[i + 1];
-              const pb = data[i + 2];
-
-              // Distance from chroma color in RGB cube
-              const dr = pr - r;
-              const dg = pg - g;
-              const db = pb - b;
-              const dist = Math.sqrt(dr * dr + dg * dg + db * db);
-
-              if (dist < tolerance) {
-                // Fully transparent (reveal background)
-                if (dist < tolerance - softness) {
-                  data[i + 3] = 0;
-                } else {
-                  // Edge softness - partial transparency
-                  const alpha = Math.max(0, (dist - (tolerance - softness)) / softness);
-                  data[i + 3] = Math.round(alpha * 255);
-                }
-              }
-            }
-
-            ctx.putImageData(imageData, 0, 0);
+          if (conf > 0.95) {
+            // Definitely person — copy video pixel directly
+            output[pix] = vd[pix];
+            output[pix + 1] = vd[pix + 1];
+            output[pix + 2] = vd[pix + 2];
+          } else if (conf > 0.05) {
+            // Edge zone — alpha-blend for smooth feathered transition
+            const inv = 1 - conf;
+            output[pix] = bd[pix] * inv + vd[pix] * conf;
+            output[pix + 1] = bd[pix + 1] * inv + vd[pix + 1] * conf;
+            output[pix + 2] = bd[pix + 2] * inv + vd[pix + 2] * conf;
           }
+          // conf <= 0.05: definitely background — keep bg pixel (already in output)
+          output[pix + 3] = 255;
         }
       }
+
+      ctx.putImageData(new ImageData(output, cw, ch), 0, 0);
 
       animFrameRef.current = requestAnimationFrame(composite);
     }
@@ -252,35 +337,22 @@ export default function PreFlightPage({
       cancelAnimationFrame(animFrameRef.current);
       ro.disconnect();
     };
-  }, [previewStream, videoBackground, mirrorVideo, chromaKeyEnabled, chromaColor]);
+  }, [previewStream, videoBackground, mirrorVideo, segmenterStatus]);
 
-  // Studio effect CSS filter (applied to canvas via CSS or we handle it)
+  // Studio effect CSS filter (applied to canvas element)
   const canvasFilter = studioEffect
     ? "brightness(1.08) contrast(0.92) saturate(0.85) blur(0.3px)"
     : undefined;
 
-  // Video CSS transform (only used when no image background)
-  const videoTransform = mirrorVideo && (videoBackground === "blur" || studioEffect)
-    ? "scaleX(-1) scale(1.1)"
-    : mirrorVideo
-      ? "scaleX(-1)"
-      : videoBackground === "blur" || studioEffect
-        ? "scale(1.1)"
-        : undefined;
+  // Video CSS transform (only used when no background effect active — "none")
+  const videoTransform = mirrorVideo
+    ? "scaleX(-1)"
+    : undefined;
 
-  // TikTok-style beautification filter (only used for blur/none)
-  const videoFilter = studioEffect
+  // Video CSS filter (only used for "none" — no segmentation needed)
+  const videoFilter = studioEffect && videoBackground === "none"
     ? "brightness(1.08) contrast(0.92) saturate(0.85) blur(0.3px)"
-    : videoBackground === "blur"
-      ? "blur(12px)"
-      : undefined;
-
-  // Background style for CSS mode (blur/none)
-  const containerBgStyle = (() => {
-    if (videoBackground === "none" || videoBackground === "blur") return {};
-    // For image backgrounds the canvas handles compositing, but keep fallback
-    return {};
-  })();
+    : undefined;
 
   // ── Enumerate devices ──────────────────────────────────────────────────
 
@@ -610,11 +682,10 @@ export default function PreFlightPage({
               <>
                 <div
                   ref={videoBoxRef}
-                  className={`preflight-preview-video-box${hasImageBg ? " preflight-preview-video-box--canvas" : videoBackground !== "none" ? " preflight-preview-video-box--bg" : ""}`}
-                  style={containerBgStyle}
+                  className={`preflight-preview-video-box${videoBackground !== "none" ? " preflight-preview-video-box--canvas" : ""}`}
                 >
-                  {/* Canvas compositing layer (used when image bg selected) */}
-                  {hasImageBg ? (
+                  {/* Canvas compositing layer (used when any bg effect active) */}
+                  {videoBackground !== "none" ? (
                     <canvas
                       ref={canvasRef}
                       className="preflight-preview-canvas"
@@ -627,7 +698,7 @@ export default function PreFlightPage({
                     autoPlay
                     playsInline
                     muted
-                    className={`preflight-preview-video${hasImageBg ? " preflight-preview-video--hidden" : ""}`}
+                    className={`preflight-preview-video${videoBackground !== "none" ? " preflight-preview-video--hidden" : ""}`}
                     style={{
                       transform: videoTransform,
                       filter: videoFilter,
@@ -731,32 +802,11 @@ export default function PreFlightPage({
                   ))}
                 </div>
 
-                {/* ── Chroma key toggle & color picker ── */}
-                {hasImageBg && (
-                  <div className="preflight-chroma-section">
-                    <label className="preflight-chroma-toggle">
-                      <input
-                        type="checkbox"
-                        checked={chromaKeyEnabled}
-                        onChange={(e) => setChromaKeyEnabled(e.target.checked)}
-                      />
-                      <span className="preflight-chroma-slider" />
-                      <span className="preflight-chroma-label">Green screen</span>
-                    </label>
-                    {chromaKeyEnabled && (
-                      <div className="preflight-chroma-colors">
-                        {CHROMA_COLORS.map((c) => (
-                          <button
-                            key={c.value}
-                            className={`preflight-chroma-color-opt${chromaColor === c.value ? " preflight-chroma-color-opt--active" : ""}`}
-                            style={{ backgroundColor: c.value }}
-                            onClick={() => setChromaColor(c.value)}
-                            title={c.label}
-                            aria-label={c.label}
-                          />
-                        ))}
-                      </div>
-                    )}
+                {/* ── Model loading indicator ── */}
+                {videoBackground !== "none" && segmenterStatus === "loading" && (
+                  <div className="preflight-model-loading">
+                    <div className="preflight-preview-spinner" />
+                    <span>Loading AI model…</span>
                   </div>
                 )}
 

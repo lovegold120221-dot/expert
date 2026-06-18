@@ -13,6 +13,9 @@ from config import (
     AVAILABLE_VOICES,
     GLOSSARY_ATTR,
     NATIVE_LANG,
+    ORBIT_VOICE_ECHO_ALLOWED,
+    ORBIT_VOICE_ECHO_ATTR,
+    ORBIT_VOICE_ECHO_DEFAULT,
     PARTICIPANT_LANG_ATTR,
     RECONCILE_DEBOUNCE_SEC,
     SESSION_GRACE_SEC,
@@ -23,6 +26,28 @@ logger = logging.getLogger("translator.router")
 
 # (speaker_identity, track_sid, target_lang)
 SessionKey = tuple[str, str, str]
+
+
+def _resolve_voice_echo(attributes: dict[str, str] | None) -> str:
+    """Read the per-participant `orbit_voice_echo` attribute.
+
+    Returns one of ORBIT_VOICE_ECHO_CLONE / _ASSIGNED / _OFF. Unknown values
+    fall back to ORBIT_VOICE_ECHO_DEFAULT (clone). Missing attribute also
+    falls back to the default — clone is the strongest user experience.
+    """
+    if not attributes:
+        return ORBIT_VOICE_ECHO_DEFAULT
+    raw = attributes.get(ORBIT_VOICE_ECHO_ATTR)
+    if not raw:
+        return ORBIT_VOICE_ECHO_DEFAULT
+    if raw in ORBIT_VOICE_ECHO_ALLOWED:
+        return raw
+    logger.warning(
+        "unknown orbit_voice_echo value %r; falling back to %s",
+        raw,
+        ORBIT_VOICE_ECHO_DEFAULT,
+    )
+    return ORBIT_VOICE_ECHO_DEFAULT
 
 
 class TranslationRouter:
@@ -209,9 +234,11 @@ class TranslationRouter:
                     else "mic"
                 )
 
-                # Read glossary and content type from the speaker's participant attributes
+                # Read glossary, content type, and voice-echo strategy from
+                # the speaker's participant attributes.
                 glossary: list[dict[str, str]] = []
                 content_type = "normal"
+                voice_echo = ORBIT_VOICE_ECHO_DEFAULT
                 if participant:
                     raw = (participant.attributes or {}).get(GLOSSARY_ATTR, "")
                     if raw:
@@ -227,6 +254,7 @@ class TranslationRouter:
                     content_type = (participant.attributes or {}).get(
                         "orbit_content_type", "normal"
                     )
+                    voice_echo = _resolve_voice_echo(participant.attributes)
 
                 session = GeminiSession(
                     room=self._room,
@@ -238,6 +266,7 @@ class TranslationRouter:
                     glossary=glossary,
                     content_type=content_type,
                     available_voices=AVAILABLE_VOICES,
+                    voice_echo=voice_echo,
                 )
                 self._sessions[key] = session
                 try:
