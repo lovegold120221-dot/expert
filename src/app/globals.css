@@ -9593,6 +9593,40 @@ html[data-theme="light"] .share-icon-whatsapp:hover {
   padding: 16px;
 }
 
+.invite-input-group {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.invite-input-group input {
+  flex: 1;
+}
+
+.invite-send-btn {
+  padding: 0 16px;
+  background: var(--entry-accent, #0070f3);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.invite-send-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  filter: grayscale(1);
+}
+
+.invite-send-btn:hover:not(:disabled) {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
 .entry-form--schedule .schedule-link span {
   display: block;
   min-width: 0;

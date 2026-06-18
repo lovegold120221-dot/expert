@@ -40,6 +40,9 @@ export default function Home() {
   const [scheduleHour, setScheduleHour] = useState("12");
   const [scheduleMinute, setScheduleMinute] = useState("00");
   const [schedulePeriod, setSchedulePeriod] = useState("PM");
+  const [attendeeEmail, setAttendeeEmail] = useState("");
+  const [sendingInvite, setSendingInvite] = useState(false);
+  const [inviteSent, setInviteSent] = useState(false);
   const [scheduledLink, setScheduledLink] = useState("");
   const [copied, setCopied] = useState(false);
   const [reminderToast, setReminderToast] = useState(false);
@@ -126,6 +129,9 @@ export default function Home() {
   async function showSchedulePanel() {
     setActivePanel("schedule");
     setCopied(false);
+    setAttendeeEmail("");
+    setInviteSent(false);
+    setSendingInvite(false);
     
     // Default to 30 mins from now
     const now = new Date();
@@ -195,6 +201,40 @@ export default function Home() {
 
     setReminderToast(true);
     setTimeout(() => setReminderToast(false), 4000);
+  }
+
+  async function sendInvitation() {
+    if (!attendeeEmail) return;
+    setSendingInvite(true);
+    try {
+      const meeting: ScheduledMeeting = {
+        id: scheduledLink.split("/").pop() || crypto.randomUUID(),
+        title: scheduleTitle,
+        scheduledAt: new Date(scheduleTime).toISOString(),
+        link: scheduledLink,
+        createdAt: new Date().toISOString(),
+        reminded: [],
+        attendeeEmail: attendeeEmail,
+        organizerEmail: user?.email || "host@orbit-meeting.com",
+      };
+
+      const res = await fetch("/api/invite", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(meeting),
+      });
+
+      if (res.ok) {
+        setInviteSent(true);
+        setTimeout(() => setInviteSent(false), 5000);
+        saveScheduledMeeting(meeting);
+        refreshMeetings();
+      }
+    } catch (err) {
+      console.error("Failed to send invite:", err);
+    } finally {
+      setSendingInvite(false);
+    }
   }
 
   function refreshMeetings() {
@@ -402,6 +442,26 @@ export default function Home() {
                       </div>
                     </div>
                   </label>
+
+                <label className="entry-field">
+                  <span>Invite attendee (email)</span>
+                  <div className="invite-input-group">
+                    <input
+                      type="email"
+                      value={attendeeEmail}
+                      onChange={(e) => setAttendeeEmail(e.target.value)}
+                      placeholder="guest@example.com"
+                    />
+                    <button 
+                      type="button" 
+                      className="invite-send-btn"
+                      onClick={sendInvitation}
+                      disabled={!attendeeEmail || sendingInvite}
+                    >
+                      {sendingInvite ? "Sending..." : inviteSent ? "Sent!" : "Send Invitation"}
+                    </button>
+                  </div>
+                </label>
 
                 <div className="schedule-link">
                   <span>{scheduledLink}</span>

@@ -8,6 +8,8 @@ export type ScheduledMeeting = {
   link: string;
   createdAt: string; // ISO string
   reminded: number[]; // timestamps (ms) of reminders already sent
+  attendeeEmail?: string;
+  organizerEmail?: string;
 };
 
 const STORAGE_KEY = "orbit.scheduledMeetings";
@@ -202,10 +204,12 @@ export function generateIcsContent(meeting: ScheduledMeeting): string {
   const fmtICS = (d: Date): string =>
     d.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
 
-  return [
+  const lines = [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
     "PRODID:-//Orbit Meeting//EN",
+    "CALSCALE:GREGORIAN",
+    meeting.attendeeEmail ? "METHOD:REQUEST" : "METHOD:PUBLISH",
     "BEGIN:VEVENT",
     `UID:${uid}@orbit-meeting`,
     `DTSTAMP:${fmtICS(new Date())}`,
@@ -214,9 +218,24 @@ export function generateIcsContent(meeting: ScheduledMeeting): string {
     `SUMMARY:${meeting.title}`,
     `DESCRIPTION:Join Orbit Meeting: ${meeting.link}`,
     `URL:${meeting.link}`,
-    "END:VEVENT",
-    "END:VCALENDAR",
-  ].join("\r\n");
+    `LOCATION:Orbit Meeting (${meeting.link})`,
+    "SEQUENCE:0",
+    "STATUS:CONFIRMED",
+    "TRANSP:OPAQUE",
+  ];
+
+  if (meeting.organizerEmail) {
+    lines.push(`ORGANIZER;CN=Orbit Host:mailto:${meeting.organizerEmail}`);
+  }
+
+  if (meeting.attendeeEmail) {
+    lines.push(`ATTENDEE;CUTYPE=INDIVIDUAL;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;CN=Guest:mailto:${meeting.attendeeEmail}`);
+  }
+
+  lines.push("END:VEVENT");
+  lines.push("END:VCALENDAR");
+
+  return lines.join("\r\n");
 }
 
 export function downloadIcsFile(meeting: ScheduledMeeting): void {

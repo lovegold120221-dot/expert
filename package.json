@@ -38,6 +38,7 @@
     "livekit-client": "^2.19.0",
     "livekit-server-sdk": "^2.15.2",
     "next": "16.2.6",
+    "nodemailer": "^9.0.1",
     "react": "19.2.4",
     "react-dom": "19.2.4"
   },
@@ -47,6 +48,7 @@
     "@capacitor/cli": "^8.4.0",
     "@capacitor/core": "^8.4.0",
     "@types/node": "^20",
+    "@types/nodemailer": "^8.0.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "concurrently": "^10.0.0",

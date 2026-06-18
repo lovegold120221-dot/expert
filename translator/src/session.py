@@ -130,6 +130,139 @@ class GeminiSession:
         )
         return "\n".join(lines)
 
+    def _build_speed_block(self) -> str:
+        """Analyze recent source segments and return dynamic speed-matching instructions.
+
+        Uses speech_style, emotion, tone, and pause markers from rolling segment
+        history to infer the speaker's current pacing characteristics and instructs
+        Gemini to match that pace in its translated output. Returns a static fallback
+        when no segment data is available.
+        """
+        pace_mapping = {
+            "fast": (
+                "Speak the translation QUICKLY and energetically — match the rapid delivery."
+            ),
+            "rapid": (
+                "Deliver the translation at a FAST, urgent pace. No unnecessary pauses."
+            ),
+            "rushed": (
+                "The speaker is speaking RUSHED and hurriedly. Match this urgency exactly."
+            ),
+            "slow": (
+                "Speak the translation SLOWLY with deliberate pacing. Let each word land."
+            ),
+            "measured": (
+                "Deliver the translation at a MEASURED, controlled pace — pause between ideas."
+            ),
+            "casual": (
+                "Use natural, relaxed delivery — like everyday speech, not formal reading."
+            ),
+            "formal": (
+                "Maintain a FORMAL, precise speaking style with clear articulation."
+            ),
+            "hesitant": (
+                "The speaker PAUSES frequently and speaks hesitantly. Include those pauses "
+                "and self-corrections naturally."
+            ),
+            "energetic": (
+                "Deliver with HIGH ENERGY — match the animated, dynamic delivery."
+            ),
+        }
+
+        emotion_pace = {
+            "angry": "Deliver FASTER and LOUDER than normal — match the anger.",
+            "excited": (
+                "Match the excited, animated delivery with higher energy and speed."
+            ),
+            "sad": (
+                "Deliver SLOWLY and softly — sadness requires a slower, weighted pace."
+            ),
+            "surprised": (
+                "React with a sudden, sharp delivery — match the surprise."
+            ),
+            "fearful": (
+                "Speak with tension and urgency — the fear should come through in speed."
+            ),
+        }
+
+        if not self._segment_history:
+            return (
+                "\n\nSPEECH PACE MATCHING:\n"
+                "Match the original speaker's speaking pace in your translation.\n"
+                "If they speak quickly, deliver the translation at that same speed.\n"
+                "If they pause, breathe, or speak hesitantly, include those same pauses\n"
+                "and breathing patterns in your output. Use the echoTargetLanguage flag\n"
+                "to preserve natural prosody and rhythm."
+            )
+
+        # Gather recent source segments (last 10 for broader pattern detection)
+        recent_source = [
+            seg
+            for seg in reversed(self._segment_history[-10 :])
+            if seg.get("kind") == "source"
+        ]
+
+        if not recent_source:
+            return self._build_speed_block()  # fallback above
+
+        # Analyze speech_style patterns across recent segments
+        style_counts: dict[str, int] = {}
+        for seg in recent_source:
+            style = seg.get("speech_style", "")
+            if style:
+                style_counts[style] = style_counts.get(style, 0) + 1
+
+        dominant_style = max(style_counts, key=style_counts.get) if style_counts else ""
+
+        # Analyze emotional patterns across recent source segments
+        emotions: list[str] = [seg.get("emotion", "") for seg in recent_source if seg.get("emotion")]
+
+        lines: list[str] = ["\nSPEECH PACE MATCHING FOR THIS SESSION:"]
+
+        # Speed/style instructions from speech_style
+        if dominant_style in pace_mapping:
+            count = style_counts[dominant_style]
+            lines.append(f"  Dominant speech style: {dominant_style} ({count}x).")
+            lines.append(f"  -> {pace_mapping[dominant_style]}")
+
+        # Add pause/pacing hints from text analysis of recent segments
+        pause_count = sum(
+            seg.get("text", "").count("[pause]") + seg.get("text", "").count("[breath]")
+            for seg in recent_source
+        )
+        if pause_count > 0:
+            lines.append(
+                f"  The speaker uses {pause_count} [pause]/[breath] markers recently."
+            )
+            lines.append(
+                "  -> Include equivalent pauses and breaths in your translation output."
+            )
+
+        # Add overlap/urgency signal
+        overlaps = sum(1 for seg in recent_source if seg.get("overlap_status") == "overlapping")
+        if overlaps > 0:
+            lines.append(
+                "  Multiple speakers are talking simultaneously — the speaker is trying to "
+                "get their point across urgently. Match that urgency."
+            )
+
+        # Add emotional intensity as a pacing signal
+        if emotions:
+            from collections import Counter
+            dominant_emotion = Counter(emotions).most_common(1)[0][0]
+            if dominant_emotion in emotion_pace:
+                lines.append(f"  Detected emotion: {dominant_emotion}.")
+                lines.append(f"  -> {emotion_pace[dominant_emotion]}")
+
+        # Always reinforce echoTargetLanguage prosody preservation
+        lines.append(
+            "  IMPORTANT: Use the echoTargetLanguage feature to preserve natural prosody.\n"
+            "  Your translated speech should sound like it comes from a native speaker\n"
+            "  delivering with the same rhythm and energy as the original."
+        )
+
+        return "\n".join(lines)
+
     def __init__(
         self,
         *,
@@ -469,6 +602,32 @@ class GeminiSession:
             "speaker is the calm elderly mentor, they stay calm in every line. "
             "If a speaker is the excitable intern, they stay excitable.",
             "",
+            "TRANSLATE BY MEANING, NOT WORDS:",
+            "- Translate the IDEA and INTENT, never word-by-word. Source syntax is "
+            "irrelevant — what matters is conveying the same meaning naturally in the "
+            "target language.",
+            "- If a direct rendering would sound unnatural or stilted, RESTRUCTURE it "
+            "completely. Never sacrifice fluency for literal fidelity to the source "
+            "sentence structure.",
+            "- When an idiom/cultural reference has no equivalent, replace it with the "
+            "target-language concept that evokes the SAME feeling — not one with a "
+            "similar surface meaning.",
+            "- Preserve humor, emotion, and intent at all costs. A joke should land; "
+            "anger should feel angry. Sadness should feel sad.",
+            "",
+            "SPEECH PACE MATCHING:",
+            "You receive the speaker's audio waveform directly — you can HEAR their speed "
+            "and rhythm. Use this auditory signal, not the transcription text, to match "
+            "pace exactly:",
+            "- If they speak fast → your translation must be equally fast. No slower.",
+            "- If they pause, breathe, or hesitate → include those pauses and breaths.",
+            "- If they whisper or shout → match that volume and intensity exactly.",
+            "- Never sound robotic, flat, or uniformly paced. Vary speed, pitch, and "
+            "energy like a human.",
+            "The echoTargetLanguage API flag already preserves prosody — your job is to "
+            "honor it by delivering the translation with the SAME energy and rhythm as "
+            "the source audio.",
+            "",
             "VOICE POOL is intentionally NOT USED in clone mode. Do not pick a "
             "voice from the pool. The pool is only relevant for assigned and "
             "off modes. In clone mode the model simply speaks with the source "
@@ -498,6 +657,7 @@ class GeminiSession:
 
         instruction = "\n".join(parts)
         instruction += self._segment_history_block()
+        instruction += self._build_speed_block()
         instruction += self._glossary_block()
         instruction += self._dialect_block()
         instruction += self._lexicon_block()
@@ -514,11 +674,11 @@ class GeminiSession:
         """
         instruction = (
             "You are a professional real-time translator using a fixed voice "
-            "pool for character casting. Match the source speaker's pace, "
-            "emotion, and vocal energy, but use a stable voice from the pool "
-            "below for each detected speaker. The first speaker uses the "
-            "first voice, the second uses the second, etc. If there are more "
-            "speakers than voices, wrap around from the start."
+            "pool for character casting. Match the source speaker's pace, pauses, "
+            "emotion, and vocal energy exactly — not just tone but speed too — but "
+            "use a stable voice from the pool below for each detected speaker. The "
+            "first speaker uses the first voice, the second uses the second, etc. "
+            "If there are more speakers than voices, wrap around from the start."
             "\n\n"
             "AVAILABLE VOICE POOL:\n" + self._voice_pool_text() + "\n"
         )
@@ -538,10 +698,11 @@ class GeminiSession:
         instruction = (
             "You are a professional real-time translator. Use a clear, "
             "neutral reading voice that prioritizes intelligibility. Do not "
-            "try to match the source speaker's voice identity. Pick a "
-            "stable voice from the pool below for each detected speaker so "
-            "the same person always sounds the same within a session, but "
-            "do not echo the source's pitch, timbre, or accent."
+            "try to match the source speaker's voice identity or accent. However, "
+            "match their speaking speed and include their pauses so the translation "
+            "stays connected to the original delivery. Pick a stable voice from "
+            "the pool below for each detected speaker so the same person always "
+            "sounds the same within a session."
             "\n\n"
             "AVAILABLE VOICE POOL:\n" + self._voice_pool_text() + "\n"
         )

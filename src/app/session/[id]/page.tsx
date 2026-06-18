@@ -68,7 +68,9 @@ export default function PreFlightPage({
   const animFrameRef = useRef<number>(0);
   const tempCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const bgImageRef = useRef<HTMLImageElement | null>(null);
-  const [segmenterStatus, setSegmenterStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const prevMaskRef = useRef<Float32Array | null>(null);
+  const [segmenterStatus, setSegmenterStatus] = useState("idle"); // Managed via effect
+  const [modelStatus, setModelStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const segmenterInitRef = useRef(false);
 
   const hasImageBg = useMemo(() => {
