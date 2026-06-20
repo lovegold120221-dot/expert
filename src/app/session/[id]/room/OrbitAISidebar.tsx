@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { MagicWandIcon } from "./icons";
+import { useRoomContext } from "@livekit/components-react";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -36,6 +37,36 @@ function formatTime(): string {
 }
 
 // ---------------------------------------------------------------------------
+// localStorage helpers
+// ---------------------------------------------------------------------------
+
+function getStorageKey(roomName: string): string {
+  return `orbit-ai-chat-${roomName}`;
+}
+
+function loadChatHistory(roomName: string): ChatMessage[] | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const stored = localStorage.getItem(getStorageKey(roomName));
+    if (!stored) return null;
+    const parsed = JSON.parse(stored);
+    if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+  } catch {
+    // ignore parse errors
+  }
+  return null;
+}
+
+function saveChatHistory(roomName: string, messages: ChatMessage[]) {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(getStorageKey(roomName), JSON.stringify(messages));
+  } catch {
+    // ignore quota errors
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
@@ -44,13 +75,28 @@ export default function OrbitAISidebar({
 }: {
   onClose: () => void;
 }) {
-  const [messages, setMessages] = useState<ChatMessage[]>([WELCOME_MESSAGE]);
+  const room = useRoomContext();
+  const roomName = room?.name || "default";
+
+  // Load persisted history on mount
+  const [messages, setMessages] = useState<ChatMessage[]>(() => {
+    if (typeof window === "undefined") return [WELCOME_MESSAGE];
+    const loaded = loadChatHistory(roomName);
+    if (loaded && loaded.length > 0) return loaded;
+    return [WELCOME_MESSAGE];
+  });
+  
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(true);
   const bodyRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+
+  // Persist messages to localStorage whenever they change
+  useEffect(() => {
+    saveChatHistory(roomName, messages);
+  }, [messages, roomName]);
 
   // Auto-scroll
   useEffect(() => {

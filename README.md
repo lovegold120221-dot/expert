@@ -13,7 +13,7 @@ Proudly built by [Eburon AI](https://eburon.ai) — founded by Jo Lernout.
 
 ## What it does
 
-Anyone with the link joins as a peer. Each participant picks one language — that's what they speak **and** what they want to hear everyone else in. When someone speaks, a Gemini Live session translates their audio into every other distinct language present in the room, on demand.
+Anyone with the link joins as a peer. Each participant picks one language — that's what they speak **and** what they want to hear everyone else in. When someone speaks, an Eburon AI session translates their audio into every other distinct language present in the room, on demand.
 
 - **Up to 40 participants** per room (configurable)
 - **240+ languages** — pick yours from the world's most comprehensive language list
@@ -46,7 +46,7 @@ flowchart LR
     Agent -- "tx:alice:mic:es" --> Bob
 ```
 
-Each participant's chosen language lives in their LiveKit `attributes.lang`. The agent watches `participantAttributesChanged` and reconciles a map of `(speaker, track_sid, target_lang)` sessions — one Gemini Live session per unique pair, **skipping pairs where source == target** (same-language pairs hear each other natively, zero Gemini cost).
+Each participant's chosen language lives in their LiveKit `attributes.lang`. The agent watches `participantAttributesChanged` and reconciles a map of `(speaker, track_sid, target_lang)` sessions — one Eburon AI translation session per unique pair, **skipping pairs where source == target** (same-language pairs hear each other natively, zero translation cost).
 
 **Screen share audio** is treated differently: since the shared content (e.g. a video in a browser tab) may be in any language regardless of the sharer's declared `lang`, the agent always translates it and the frontend always ducks the original.
 
@@ -93,20 +93,20 @@ Here is the exact pipeline from when a participant speaks to when other particip
    - Collects target languages from all participants' `lang` attribute (excludes the `NATIVE_LANG` sentinel `"none"`).
    - Identifies active speakers with unmuted audio tracks (including screen share audio, which is always eligible regardless of the sharer's declared language).
    - For each `(speaker, track, source_lang)` × target_lang pair, creates a session unless:
-     - The speaker's source language matches the target language (same-language pair hears each other natively — zero Gemini cost), **except** in single-user mode (one remote participant) where translation runs unconditionally.
+     - The speaker's source language matches the target language (same-language pair hears each other natively — zero translation cost), **except** in single-user mode (one remote participant) where translation runs unconditionally.
      - For screen share audio: only translates if at least one listener has `orbit_translate_screenshare` != `"false"` (defaults to `true`).
 
 #### Phase 3 — Session Lifecycle
 
-1. For each newly desired `(speaker, track_sid, target_lang)`, the router calls `GeminiSession.start()` in `translator/src/session.py`. This:
+1. For each newly desired `(speaker, track_sid, target_lang)`, the router starts an Eburon AI translation session in `translator/src/session.py`. This:
    - Publishes a `LocalAudioTrack` into the LiveKit room named `tx:{speaker_identity}:{track_source}:{target_lang}`.
-   - Creates an `AudioSource` (24 kHz mono) to receive Gemini's translated audio.
-   - Spawns a pump loop task (`_run()`) that opens a raw WebSocket to Gemini.
-2. The WebSocket connects to:
+   - Creates an `AudioSource` (24 kHz mono) to receive Eburon AI translated audio.
+   - Spawns a pump loop task (`_run()`) that opens a raw WebSocket to the Eburon AI realtime translation service.
+2. The WebSocket connects to the Eburon AI translation endpoint with the API key from `GEMINI_API_KEY`:
 
    ```text
-   wss://generativelanguage.googleapis.com/ws/\
-   google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent\
+   wss://<eburon-ai-translation-endpoint>/ws/\
+   v1beta.GenerativeService.BidiGenerateContent\
    ?key={GEMINI_API_KEY}
    ```
 
@@ -115,7 +115,7 @@ Here is the exact pipeline from when a participant speaks to when other particip
    ```json
    {
      "setup": {
-       "model": "models/gemini-3.5-live-translate-preview",
+       "model": "<GEMINI_MODEL>",
        "outputAudioTranscription": {},
        "inputAudioTranscription": {},
        "generationConfig": {
@@ -132,12 +132,12 @@ Here is the exact pipeline from when a participant speaks to when other particip
    }
    ```
 
-   The instruction prompt tells Gemini to perform a "faithful vocal mimic" — preserving the source speaker's speed, rhythm, pitch contour, volume, intonation, and emotional delivery exactly in the translated output.
-3. Gemini sends a `setupComplete` acknowledgment. Only then does the input pump begin streaming audio.
+   The instruction prompt tells Eburon AI to perform a "faithful vocal mimic" — preserving the source speaker's speed, rhythm, pitch contour, volume, intonation, and emotional delivery exactly in the translated output.
+3. Eburon AI sends a `setupComplete` acknowledgment. Only then does the input pump begin streaming audio.
 
 #### Phase 4 — Audio Capture & Streaming
 
-1. The input pump (`_pump_input`) reads PCM audio from the speaker's RemoteAudioTrack via `rtc.AudioStream` at 16 kHz mono (Gemini's expected input rate). Each chunk is base64-encoded and sent as:
+1. The input pump (`_pump_input`) reads PCM audio from the speaker's RemoteAudioTrack via `rtc.AudioStream` at 16 kHz mono (Eburon AI's expected input rate). Each chunk is base64-encoded and sent as:
 
    ```json
    {
@@ -171,13 +171,13 @@ Here is the exact pipeline from when a participant speaks to when other particip
 
 #### Phase 6 — Teardown
 
-1. When demand for a session disappears (speaker mutes mic, last listener for a target language leaves, or participant disconnects), the router starts a **10-second grace timer** (`SESSION_GRACE_SEC`). If demand returns before the timer expires — e.g. the speaker unmutes within 10 seconds — the timer is cancelled and the session stays warm. This prevents thrashing Gemini connections on brief coughs or mic toggles.
+1. When demand for a session disappears (speaker mutes mic, last listener for a target language leaves, or participant disconnects), the router starts a **10-second grace timer** (`SESSION_GRACE_SEC`). If demand returns before the timer expires — e.g. the speaker unmutes within 10 seconds — the timer is cancelled and the session stays warm. This prevents thrashing Eburon AI connections on brief coughs or mic toggles.
 2. If the timer expires and demand is still absent, the session is torn down: `aclose()` cancels the pump tasks, unpublishes the translation track, and closes the WebSocket.
 3. On explicit participant disconnect, sessions for that speaker are torn down **immediately** (no grace window). The backfill on agent startup populates any pre-existing tracks so late joiners see translation immediately.
 
 #### Phase 7 — Recovery
 
-1. On Gemini WebSocket errors, the session retries with exponential backoff: `[0.5, 1, 2, 4, 8, 16, 30]` seconds with 20% jitter. After 5 consecutive failures, it logs at ERROR level and keeps retrying indefinitely with the longest backoff. If the speaker's track ends (they leave), the pump loop exits cleanly and does not reconnect — the router's reconciliation handles cleanup.
+1. On Eburon AI WebSocket errors, the session retries with exponential backoff: `[0.5, 1, 2, 4, 8, 16, 30]` seconds with 20% jitter. After 5 consecutive failures, it logs at ERROR level and keeps retrying indefinitely with the longest backoff. If the speaker's track ends (they leave), the pump loop exits cleanly and does not reconnect — the router's reconciliation handles cleanup.
 
 ---
 
@@ -188,7 +188,7 @@ Here is the exact pipeline from when a participant speaks to when other particip
 - Node.js 20+, [pnpm](https://pnpm.io/)
 - Python 3.10+, [uv](https://docs.astral.sh/uv/)
 - A [LiveKit Cloud](https://cloud.livekit.io) project (free tier works)
-- A [Gemini API key](https://aistudio.google.com/apikey)
+- An [Eburon AI](https://eburon.ai) API key
 
 ### Run locally
 
@@ -198,7 +198,7 @@ pnpm run setup
 
 # 2. Fill credentials in .env.local and translator/.env.local
 #    LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET (both files)
-#    GEMINI_API_KEY (translator/.env.local only)
+#    GEMINI_API_KEY for Eburon AI (translator/.env.local only)
 
 # 3. Run frontend + agent worker together
 pnpm run dev
@@ -243,8 +243,8 @@ root (pnpm, Next.js 16)
 │   │   ├── ServiceWorkerRegister.tsx # PWA service worker registration
 │   │   ├── api/
 │   │   │   ├── token/route.ts        # Mints LiveKit token + dispatches translator agent
-│   │   │   ├── translate-voice/      # One-shot Gemini voice translation
-│   │   │   ├── translate-text/       # One-shot Gemini text translation
+│   │   │   ├── translate-voice/      # One-shot Eburon AI voice translation
+│   │   │   ├── translate-text/       # One-shot Eburon AI text translation
 │   │   │   ├── breakout/             # Breakout room management
 │   │   │   ├── moderate/             # Moderation actions
 │   │   │   └── record/               # Recording control
@@ -270,7 +270,7 @@ root (pnpm, Next.js 16)
 │   ├── src/
 │   │   ├── agent.py                 # @server.rtc_session("gemini-translator")
 │   │   ├── router.py                # TranslationRouter: reconcile loop
-│   │   ├── session.py               # GeminiSession: raw WebSocket → Live API
+│   │   ├── session.py               # Translation session: raw WebSocket → Eburon AI
 │   │   ├── audio.py                 # PCM frame plumbing
 │   │   └── config.py                # Agent caps (mirror src/lib/config.ts)
 │   ├── tests/
@@ -465,7 +465,7 @@ docker run -d --name orbit-agent \
 
 The agent's entrypoint (`agent.py`) uses LiveKit's `AgentServer` which connects to the LiveKit server via the credentials in `translator/.env.local`. It will auto-dispatch when a room requests the `"gemini-translator"` agent.
 
-> **Important**: The agent needs network access to both your LiveKit server and the Gemini API (`generativelanguage.googleapis.com`). No public HTTP port needed — it's a WebSocket client.
+> **Important**: The agent needs network access to both your LiveKit server and the Eburon AI realtime translation service. No public HTTP port needed — it's a WebSocket client.
 
 ### 5. All-in-one with Docker Compose
 
@@ -510,13 +510,13 @@ services:
 | `LIVEKIT_URL` | `ws://localhost:7880` (or `wss://lk.yourdomain.com`) |
 | `LIVEKIT_API_KEY` | The key name from `LIVEKIT_KEYS` (e.g. `mykey`) |
 | `LIVEKIT_API_SECRET` | The key secret from `LIVEKIT_KEYS` (e.g. `mysecret`) |
-| `GEMINI_API_KEY` | Your Gemini API key (still required — no self-hosted LLM fallback yet) |
+| `GEMINI_API_KEY` | Your Eburon AI API key (still required — no self-hosted LLM fallback yet) |
 | `NEXT_PUBLIC_SUPABASE_URL` | `http://localhost:8000` |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | From Supabase Studio → Settings → API |
 
 ### Limitations of self-hosting
 
-- **Gemini API** still requires a Google API key — there is no on-device LLM fallback for translation (the Gemini Live API is purpose-built for low-latency speech translation)
+- **Eburon AI translation API** still requires an API key — there is no on-device LLM fallback for translation
 - **LiveKit server** in single-node mode may not scale to hundreds of concurrent rooms; LiveKit Cloud handles global distribution
 - **Supabase self-hosted** lacks some cloud features (automatic backups, built-in auth UI flows — you'll use Orbit's own auth pages)
 - **TLS/HTTPS** is required for WebRTC in production — plan for a reverse proxy with Let's Encrypt
@@ -533,7 +533,7 @@ Caps in `src/lib/config.ts` and `translator/src/config.py` — adjust together:
 | Departure timeout         | 30s                                 | token route                          |
 | Session grace on mute     | 10s                                 | `SESSION_GRACE_SEC` (agent)          |
 | Reconcile debounce        | 250ms                               | `RECONCILE_DEBOUNCE_SEC` (agent)     |
-| Gemini model              | `gemini-3.5-live-translate-preview` | `GEMINI_MODEL` (agent)               |
+| Eburon AI model           | configured by `GEMINI_MODEL`        | `GEMINI_MODEL` (agent)               |
 
 ### Critical naming (must keep in sync)
 
@@ -557,7 +557,7 @@ The agent dispatch name `"gemini-translator"` is hardcoded in **two places** —
 - **Frontend** — Next.js 16 (Turbopack), React 19, `@livekit/components-react`, `livekit-client`
 - **Token mint** — `livekit-server-sdk` (`RoomAgentDispatch` + `RoomConfiguration`)
 - **Agent runtime** — `livekit-agents` 1.5 with `AgentServer.rtc_session()`
-- **Translation** — Gemini Live API (raw v1beta `BidiGenerateContent` WebSocket with `translationConfig`)
+- **Translation** — Eburon AI realtime translation API (raw v1beta `BidiGenerateContent` WebSocket with `translationConfig`)
 - **Audio I/O** — `livekit.rtc.AudioStream` (16 kHz mono in) + `AudioSource` (24 kHz mono out)
 - **Auth** — Supabase email auth with `@supabase/ssr` cookie sessions
 - **Desktop** — Electron 35 with `electron-builder` 26 (macOS/Windows/Linux)
@@ -574,7 +574,7 @@ The agent dispatch name `"gemini-translator"` is hardcoded in **two places** —
 - **Session creation**: `sessionStorage` stores name + lang before navigating to `/room`. Hydration reads from `useEffect`, not `useState` initializer (prevents SSR mismatch).
 - **Settings persistence**: Supabase upsert falls back silently if `profiles` table doesn't exist. User identity is a random UUID in `localStorage("orbitUserId")`.
 - **TrackSource enum naming**: LiveKit protobuf uses `SOURCE_SCREENSHARE_AUDIO` (no underscore between SCREEN and SHARE). The spelling `SOURCE_SCREEN_SHARE_AUDIO` raises `AttributeError` — both occurrences in `router.py` must match.
-- **Translator uses raw WebSockets** (not `@google/genai` SDK) to control the exact JSON shape sent to Gemini v1beta. See `session.py` docstring.
+- **Translator uses raw WebSockets** to control the exact JSON shape sent to the Eburon AI v1beta realtime API. See `session.py` docstring.
 - **showSaveFilePicker()** requires a secure context (HTTPS or localhost) — on HTTP deploys falls back to `<a>` download.
 - **Agent dependency pin**: `yarl<1.24` in `pyproject.toml` (cp310-only wheel issue).
 

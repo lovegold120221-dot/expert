@@ -36,7 +36,7 @@
 - **Theme preferences + app-logo favicon** — Added Settings preferences for System/Dark/Light theme, persisted user theme config, and regenerated favicon/PWA icons from the Eburon app logo
 - **Share screen modal fix** — Reworked the share modal with accessible dialog semantics, inline startup/error states, unsupported-browser handling, and responsive mobile sheet styling
 - **Centered mobile share modal** — Kept the share screen modal centered on mobile and made the Android native screen-share bridge wait for the first captured frame before publishing
-- **Speed Mimicry & Multi-Speaker Transcripts** — Instructed Gemini Live agent to match speaking speed of original speakers, and parsed speaker diarization tags on the frontend for separated speaker output
+- **Speed Mimicry & Multi-Speaker Transcripts** — Instructed Eburon AI agent to match speaking speed of original speakers, and parsed speaker diarization tags on the frontend for separated speaker output
 - **Schedule share icon CSS** — Normalized the Email/Gmail/WhatsApp invite tiles with a centered icon badge and consistent responsive sizing
 - **Orbit AI Integration** — Magic wand icon, chatbot sidebar with Ollama `deepseek-r1:1.5b` CSR agent. Created `orbit-ai` model with app feature knowledge base.
 - **Revert landing page integration** — Deleted landing page folder/components, restored the authenticated lobby dashboard as the default root view while preserving the layout alignment fixes.
@@ -1854,11 +1854,11 @@ Agent starts, connects to LiveKit Cloud (`wss://eburon-meet-15gd8gwg.livekit.clo
 - User request: Implement Dynamic Dialect & Glossary Steering from todo-upgrade.md
 - Success criteria:
   - Custom Glossary has its own tab in settings.
-  - Gemini Live WS connection correctly receives and respects the systemInstruction (mimic instructions, glossary terms, dialect steering).
+  - Eburon AI WS connection correctly receives and respects the systemInstruction (mimic instructions, glossary terms, dialect steering).
   - Linter warnings are resolved.
 
 ### WHAT WAS DONE
-- **WebSocket System Instruction steering (Backend):** Modified `_build_setup_payload` in `translator/src/session.py` to combine the `base_instruction` and `dialect_instruction` into a `systemInstruction` object. Now, Gemini Live receives the full instruction set (including custom glossary terms, flemish/belgian dialect instructions, and conversation context).
+- **WebSocket System Instruction steering (Backend):** Modified `_build_setup_payload` in `translator/src/session.py` to combine the `base_instruction` and `dialect_instruction` into a `systemInstruction` object. Now, Eburon AI receives the full instruction set (including custom glossary terms, flemish/belgian dialect instructions, and conversation context).
 - **Settings tab promotion (Frontend):** Restructured `src/app/settings/page.tsx` to add a new `"glossary"` SettingsTab. Promoted the custom glossary row list editor from the Translation tab to this new dedicated Glossary tab, making the Settings interface much cleaner.
 - **CSS order fix (globals.css):** Swapped the declarations of `backdrop-filter` and `-webkit-backdrop-filter` on lines 3867 and 5310 in `src/app/globals.css` to satisfy the CSS stylesheet declaration order linter.
 
@@ -2225,7 +2225,7 @@ Agent starts, connects to LiveKit Cloud (`wss://eburon-meet-15gd8gwg.livekit.clo
 - User request: fix the speed to mimic the source audio speed and make the transcription to have multi speaker output
 - Preservation constraints: Preserve all existing UI structures, layouts, and page routing logic.
 - Success criteria:
-  - Gemini Live agent instructed in system prompts to match the speaking speed (words per minute) of the original speakers perfectly.
+  - Eburon AI agent instructed in system prompts to match the speaking speed (words per minute) of the original speakers perfectly.
   - Front-end transcription/caption views parse bracketed speaker tags (like `[A]`, `[B]`, `[John]`) and display them as speaker names rather than generic attributes.
 
 ### WHAT WAS DONE
@@ -2598,3 +2598,37 @@ Agent starts, connects to LiveKit Cloud (`wss://eburon-meet-15gd8gwg.livekit.clo
   - `TASK.md` — Task ledger updated
 - Notes:
   - The history panel queries database entries matching the current meeting ID, allowing participants to review previous translations without leaving the active call.
+
+## TASK-20260620-150736: README Eburon AI naming pass
+
+### START RECORD
+- STATUS: IN_PROGRESS
+- Start time: 2026-06-20T15:07:36Z
+- User request: Edit the full README and replace the disallowed provider wording with the whitelisted Eburon AI name.
+- Preservation constraints: Keep hardcoded implementation identifiers accurate where they are required by the current codebase.
+- Success criteria:
+  - README public-facing translation copy uses Eburon AI naming. ✓
+  - The exact disallowed provider phrase is removed from README and related docs/comments. ✓
+  - Existing code identifiers and env variable names remain documented accurately. ✓
+
+### TODO
+- [x] Replace public-facing translation provider references in `README.md`.
+- [x] Confirm the disallowed phrase no longer appears in `README.md`.
+- [x] Remove the exact disallowed phrase from related docs/comments.
+- [x] Run `pnpm build`.
+- [x] Run `cd translator && uv run pytest`.
+- [x] Update final task report.
+
+### FINAL REPORT
+- STATUS: COMPLETED
+- End time: 2026-06-20T15:09:37Z
+- Files changed:
+  - `README.md` — Replaced public-facing translation provider wording with Eburon AI naming and removed the disallowed phrase.
+  - `GEMINI.md`, `todo-upgrade.md`, `translator/README.md` — Replaced the exact disallowed phrase in supporting docs.
+  - `translator/src/audio.py`, `translator/src/config.py`, `translator/src/session.py`, `translator/pyproject.toml` — Replaced the exact disallowed phrase in comments/doc metadata.
+  - `TASK.md` — Added this task ledger entry and cleaned older exact-phrase mentions.
+- Validation performed:
+  - `pnpm build` — Passed.
+  - `cd translator && uv run pytest` — Passed, 32 tests.
+- Notes:
+  - Hardcoded implementation identifiers such as `GEMINI_API_KEY`, `GEMINI_MODEL`, and `"gemini-translator"` remain documented because they must match the current code.
