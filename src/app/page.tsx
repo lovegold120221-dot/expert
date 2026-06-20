@@ -203,17 +203,15 @@ export default function LandingPage() {
         </div>
 
         <div className="landing-copy">
-          <h2>Sovereign control. Zero lock-in.</h2>
+          <h2>Features that keep meetings moving.</h2>
           <p>
-            Designed for developers and enterprise teams. Self-host the entire
-            Orbit Meeting stack on your own infrastructure — no dependency on
-            cloud providers. Maintain complete data privacy while leveraging
-            cutting-edge voice intelligence.
+            Designed for global teams that need conversations to stay natural,
+            clear, and easy to manage before, during, and after every call.
           </p>
           <ul>
-            <li>Supabase auth with secure data persistence</li>
-            <li>Dockerized Python worker agents</li>
-            <li>Open-source WebRTC Server compatible</li>
+            <li>Real-time translated speech and live captions</li>
+            <li>Natural voice tone, pace, and emotion matching</li>
+            <li>Meeting history, recordings, and preferences saved for later</li>
           </ul>
         </div>
       </section>
