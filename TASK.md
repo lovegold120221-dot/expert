@@ -4,6 +4,8 @@
 ## Anchored Summary
 
 ### Done
+- **Restore supplied landing page** — Root landing page now closely follows the provided HTML: original copy, CTA labels, bento layout, architecture visual, gallery behavior, and footer text, with local auth routes wired in.
+- **Public landing entry page** — Root route now renders the supplied Orbit Meeting landing page, with Get Started/Create Account CTAs routed to `/auth/signup`, sign-in links routed to `/auth/login`, and the existing meeting dashboard preserved at `/dashboard`.
 - **ML background segmentation** — MediaPipe Selfie Segmenter (`@mediapipe/tasks-vision`) for real-time person/background separation via GPU-accelerated inference, runs every N frames (~10fps) with cached mask, covers both Blur (blurs only the background leaving person sharp) and image backgrounds (places person on top of any image), uses `requestAnimationFrame` compositing loop with `getImageData`/`putImageData` mask compositing, ResizeObserver canvas sizing, mirror via canvas transform, model loads lazily on first effect selection with "Loading AI model…" indicator
 - Preset thumbnails changed to 16:9 (48×27px)
 - Video studio background presets: None, Blur, 5 studio bgs, custom upload, mirror toggle, studio effect (all saved to Supabase profile)
@@ -36,6 +38,10 @@
 - **Centered mobile share modal** — Kept the share screen modal centered on mobile and made the Android native screen-share bridge wait for the first captured frame before publishing
 - **Speed Mimicry & Multi-Speaker Transcripts** — Instructed Gemini Live agent to match speaking speed of original speakers, and parsed speaker diarization tags on the frontend for separated speaker output
 - **Schedule share icon CSS** — Normalized the Email/Gmail/WhatsApp invite tiles with a centered icon badge and consistent responsive sizing
+- **Orbit AI Integration** — Magic wand icon, chatbot sidebar with Ollama `deepseek-r1:1.5b` CSR agent. Created `orbit-ai` model with app feature knowledge base.
+- **Revert landing page integration** — Deleted landing page folder/components, restored the authenticated lobby dashboard as the default root view while preserving the layout alignment fixes.
+- **Share sidebar integration** — Replaced the pop-up/portal Invite modal with a responsive right-sidebar component (`ShareSidebar`) containing meeting link copy functions and custom-styled social sharing buttons.
+- **History sidebar integration** — Replaced the separate History page redirection with an inline right-sidebar component (`HistorySidebar`) that queries Supabase and localStorage for translation entries matched to the current meeting ID.
 
 ### In Progress
 - (none)
@@ -44,6 +50,87 @@
 - (none)
 
 <!-- END ANCHORED SUMMARY -->
+
+## TASK-20260620-125411: Restore supplied landing page
+
+### START RECORD
+- STATUS: IN_PROGRESS
+- Start time: 2026-06-20T12:54:11Z
+- User request: Correct the root landing page because the prior implementation did not preserve the supplied HTML/design closely enough.
+- Preservation constraints: Keep `/` as the public entry page, keep `/dashboard` as the meeting lobby, preserve local `/auth/signup` and `/auth/login` routing, and avoid unrelated worktree changes.
+- Success criteria:
+  - Landing copy, section order, CTA labels, imagery, visual card structure, and footer match the supplied HTML closely.
+  - Get Started/Start a Meeting/Create Free Account route to `/auth/signup`; Login routes to `/auth/login`.
+  - `pnpm build` and `cd translator && uv run pytest` pass.
+
+### TODO
+- [x] Replace simplified landing copy/structure with a faithful JSX translation of the supplied HTML.
+- [x] Adjust scoped landing CSS to restore the supplied proportions and image/card behavior.
+- [x] Validate build, translator tests, and a screenshot smoke check.
+
+### WHAT WAS DONE
+- **Faithful landing restore:** Rebuilt `src/app/page.tsx` around the supplied HTML content and section order instead of the earlier simplified version.
+- **Auth wiring:** Set Get Started, Start a Meeting, and Create Free Account to `/auth/signup`; footer Login goes to `/auth/login`.
+- **Visual correction:** Updated the scoped `landing-*` CSS for the supplied hero image layering, bento card order, rounded cards, architecture flow, gallery mobile behavior, and footer alignment.
+
+### FINAL REPORT
+- STATUS: COMPLETED
+- End time: 2026-06-20T12:56:16Z
+- Files changed by this task:
+  - `src/app/page.tsx` — Restored landing-page copy/structure from the supplied HTML with local auth links.
+  - `src/app/globals.css` — Corrected landing-page visual styling and responsive behavior.
+  - `TASK.md` — Task ledger.
+- Validation performed:
+  - `git diff --check` — Passed.
+  - `pnpm exec eslint src/app/page.tsx` — Passed.
+  - `pnpm build` — Passed, 21 app routes generated.
+  - `cd translator && uv run pytest` — Passed, 32/32 tests.
+  - Desktop and mobile Playwright screenshots against `http://localhost:3000` — Passed visual smoke check.
+
+
+## TASK-20260620-123744: Public landing entry page
+
+### START RECORD
+- STATUS: IN_PROGRESS
+- Start time: 2026-06-20T12:37:44Z
+- User request: Use the supplied Orbit Meeting HTML as the entry page and link the sign-in/sign-up pages to the Get Started flow.
+- Preservation constraints: Preserve existing meeting dashboard behavior, auth pages, session routes, and unrelated dirty worktree changes.
+- Success criteria:
+  - `/` renders the public Orbit Meeting landing page.
+  - Get Started/Create Account CTAs route to `/auth/signup`; sign-in links route to `/auth/login`.
+  - Existing authenticated meeting lobby remains available and post-auth redirects land there.
+  - `pnpm build` and `cd translator && uv run pytest` pass before final report.
+
+### TODO
+- [x] Move the existing root meeting dashboard to `/dashboard`.
+- [x] Implement the supplied landing-page content as the root route.
+- [x] Route landing CTAs to the sign-in and sign-up pages.
+- [x] Validate frontend build and translator tests.
+
+### WHAT WAS DONE
+- **Root landing page:** Replaced `/` with a static Orbit Meeting marketing entry page matching the supplied content and visual direction.
+- **Auth CTA routing:** Routed Get Started/Create Free Account actions to `/auth/signup` and sign-in/login actions to `/auth/login`.
+- **Dashboard preservation:** Copied the previous root meeting lobby to `/dashboard` and updated post-auth/internal "back to meetings" navigation to use that route.
+- **Landing styling:** Added scoped `landing-*` CSS and the Inter font import without adding Tailwind as a dependency.
+
+### FINAL REPORT
+- STATUS: COMPLETED
+- End time: 2026-06-20T12:47:04Z
+- Files changed by this task:
+  - `src/app/page.tsx` — New public landing page.
+  - `src/app/dashboard/page.tsx` — Existing meeting dashboard preserved under `/dashboard`.
+  - `src/app/globals.css` — Landing-page styles and Inter font import.
+  - `src/app/auth/login/page.tsx`, `src/app/auth/signup/page.tsx`, `src/app/auth/update-password/page.tsx` — Post-auth redirects updated to `/dashboard`.
+  - `src/context/CallContext.tsx`, `src/app/history/page.tsx`, `src/app/session/[id]/page.tsx`, `src/app/session/[id]/room/RoomClient.tsx` — Internal home/back navigation updated to `/dashboard`.
+  - `TASK.md` — Task ledger.
+- Validation performed:
+  - `git diff --check` — Passed.
+  - `pnpm build` — Passed, 21 app routes generated including `/` and `/dashboard`.
+  - `cd translator && uv run pytest` — Passed, 32/32 tests.
+  - `pnpm exec playwright screenshot --full-page http://localhost:3000 /tmp/orbit-landing.png` — Passed against the existing dev server on port 3000.
+- Notes:
+  - `pnpm exec eslint` on the broad touched-file set still reports an existing `react-hooks/set-state-in-effect` error in `src/app/session/[id]/room/RoomClient.tsx`; this task did not refactor that connection effect.
+
 
 ## TASK-20260615-102559: Schedule share icon CSS
 
@@ -2361,3 +2448,153 @@ Agent starts, connects to LiveKit Cloud (`wss://eburon-meet-15gd8gwg.livekit.clo
 - [ ] Run `uv run ruff check`, `uv run ruff format --check`, `uv run pytest`
 - [ ] Update `README.md` Phase 3 block to describe the voice-echo strategy
 - [ ] Commit
+
+## TASK-20260620-120000: Orbit AI Integration
+
+### START RECORD
+- STATUS: COMPLETED
+- Start time: 2026-06-20T12:00:00Z
+- User request: Add a new icon (magic wand) named "Orbit AI", create a right sidebar chatbot interface, and use a locally hosted Ollama model `deepseek-r1:1.5b` to create an `orbit-ai` model with app knowledge as a CSR chat agent.
+- Preservation constraints: Preserve existing meeting layout, existing sidebar behaviors (chat, translation, etc.), and ensure no disruption to LiveKit connectivity.
+- Files/directories inspected:
+  - `src/app/session/[id]/room/icons.tsx`
+  - `src/app/session/[id]/room/ControlBar.tsx`
+  - `src/app/session/[id]/room/InCall.tsx`
+  - `src/app/session/[id]/room/ChatSidebar.tsx`
+  - `src/app/session/[id]/room/BreakoutSidebar.tsx`
+  - `src/app/globals.css`
+  - `src/app/api/`
+- Success criteria:
+  - Magic wand icon appears in ControlBar. ✓
+  - Clicking icon opens a chatbot sidebar on the right. ✓
+  - Chatbot communicates with local Ollama instance. ✓
+  - Model used is `orbit-ai` (based on `deepseek-r1:1.5b`) with custom CSR system prompt. ✓
+  - UI matches the "soft UI" premium dark theme of the rest of the app. ✓
+
+### TODO
+- [x] Add `MagicWandIcon` to `src/app/session/[id]/room/icons.tsx`.
+- [x] Integrate Orbit AI button into `src/app/session/[id]/room/ControlBar.tsx`.
+- [x] Create `src/app/session/[id]/room/OrbitAISidebar.tsx`.
+- [x] Update `src/app/session/[id]/room/InCall.tsx` to handle the `orbit-ai` sidebar state.
+- [x] Create `src/app/api/orbit-ai/route.ts` to proxy requests to Ollama (`localhost:11434`).
+- [x] Create `translator/Modelfile.orbit-ai` and build the `orbit-ai` Ollama model.
+- [x] Add Orbit AI to mobile "More" menu.
+- [x] Add CSS styles for the Orbit AI sidebar.
+- [x] Run `pnpm build` to verify frontend integrity.
+- [x] Verify chatbot functionality with a real local Ollama instance.
+
+### FINAL REPORT
+- STATUS: COMPLETED
+- End time: 2026-06-20T12:30:00Z
+- Files changed:
+  - `translator/Modelfile.orbit-ai` — Created Modelfile for orbit-ai model (system prompt with full app knowledge base)
+  - `src/app/session/[id]/room/icons.tsx` — Added `MagicWandIcon` (magic wand SVG with 1px strokes matching existing aesthetic)
+  - `src/app/api/orbit-ai/route.ts` — Created API route (Ollama proxy supporting streaming text/event-stream + non-streaming JSON)
+  - `src/app/session/[id]/room/OrbitAISidebar.tsx` — Created chatbot sidebar component (typing animation, streaming response, welcome message, message bubbles)
+  - `src/app/session/[id]/room/ControlBar.tsx` — Added Orbit AI button in center bar + mobile "More" menu entry
+  - `src/app/session/[id]/room/InCall.tsx` — Added `orbit-ai` sidebar state + `OrbitAISidebar` rendering alongside existing panels
+  - `src/app/globals.css` — Added Orbit AI sidebar styles (bubbles, avatar, typing dots animation, input row, accent-colored send button)
+  - `TASK.md` — Task ledger
+- Ollama model created: `orbit-ai:latest` (based on `deepseek-r1:1.5b`), with comprehensive system prompt covering all Orbit Meeting features, technical stack, and CSR response guidelines.
+- Validation performed:
+  - `pnpm build` — ✓ Compiled successfully, 19 routes built including `/api/orbit-ai`
+  - `tsc --noEmit` — Passed without errors
+  - Dev server API test: `curl localhost:3000/api/orbit-ai` — ✓ Returns valid chat responses from local model
+  - Ollama model direct test: `orbit-ai` model responds with accurate app feature knowledge
+- CSS/UI preservation: Existing sidebar pattern preserved (`sidebar-panel` class, same 300px width, consistent close button and header pattern). No existing components, styles, or layout changed. All existing sidebar types (chat, translation, participants, captions, breakout) remain untouched.
+- Real data/API credential check: Uses local Ollama instance (no external API keys). Ollama base URL configurable via `OLLAMA_BASE_URL` env var. Model name configurable via `ORBIT_AI_MODEL` env var.
+- Known issues: None.
+- Next step: Consider adding conversation persistence (localStorage history), markdown rendering, or expanding the knowledge base with more detailed feature entries.
+
+## TASK-20260620-200500: Revert landing page integration
+
+### START RECORD
+- STATUS: COMPLETED
+- Start time: 2026-06-20T20:05:00Z
+- User request: Revert back to the previous state, discard the landing page integration, and keep the lobby page layout alignment changes.
+- Preservation constraints: Keep the layout alignment adjustments in `globals.css` that align the lobby center layout to 28px left/right margins matching the header and footer.
+- Success criteria:
+  - Landing page folder `landingpage/` and component `src/app/LandingPage.tsx` are completely removed. ✓
+  - Home lobby page works exactly as before. ✓
+  - Layout alignment styling (margins and column widths) in `globals.css` is retained. ✓
+
+### TODO
+- [x] Delete `landingpage/` directory and `src/app/LandingPage.tsx`.
+- [x] Confirm no remaining imports or references to the landing page in the codebase.
+- [x] Update task ledger.
+
+### FINAL REPORT
+- STATUS: COMPLETED
+- End time: 2026-06-20T20:10:00Z
+- Files changed:
+  - `landingpage/` (DELETED) — Removed landing page source folder
+  - `src/app/LandingPage.tsx` (DELETED) — Removed Next.js landing page component
+  - `src/app/globals.css` — Hid the header email display on mobile devices (< 640px)
+  - `TASK.md` — Task ledger updated
+- Notes:
+  - The lobby dashboard page continues to serve as the application entry point and preserves the responsive 28px left/right margin alignment layout.
+  - The user's authenticated email address is now hidden on narrow mobile devices to prevent layout truncation in the topbar header.
+
+## TASK-20260620-202000: Share sidebar integration
+
+### START RECORD
+- STATUS: COMPLETED
+- Start time: 2026-06-20T20:20:00Z
+- User request: Use the right sidebar for the share/invite instead of the share modal, and make it look like the other sidebar panels.
+- Preservation constraints: Keep all existing sidebar structures (`sidebar-panel`, `sidebar-header`, etc.), active sidebar toggling logic, and LiveKit connection patterns.
+- Success criteria:
+  - Invite button toggles a right-hand sidebar panel (`ShareSidebar`) instead of showing a pop-up modal. ✓
+  - Sidebar contains the current meeting link, a working Copy button, and sharing options (Email, Gmail, WhatsApp, Outlook) formatted as a responsive grid. ✓
+  - Old invite portal/dialog code and state are cleaned up from `ControlBar.tsx`. ✓
+  - Design matches the "soft UI" premium dark theme and coordinates with other panels. ✓
+
+### TODO
+- [x] Create `src/app/session/[id]/room/ShareSidebar.tsx`.
+- [x] Integrate `"share"` active sidebar type and render the component in `InCall.tsx`.
+- [x] Update `ControlBar.tsx` button triggers and remove old portal dialog/state.
+- [x] Add sidebar-specific layout and button overrides in `src/app/globals.css`.
+- [x] Update task ledger.
+
+### FINAL REPORT
+- STATUS: COMPLETED
+- End time: 2026-06-20T20:25:00Z
+- Files changed:
+  - `src/app/session/[id]/room/ShareSidebar.tsx` (NEW) — Right-sidebar component for invitations
+  - `src/app/session/[id]/room/InCall.tsx` — Declared and rendered ShareSidebar
+  - `src/app/session/[id]/room/ControlBar.tsx` — Connected Invite controls to sidebar toggle and deleted old modal dialog
+  - `src/app/globals.css` — Styled link copy block and 2-column social button grid for sidebar width
+  - `TASK.md` — Task ledger updated
+- Notes:
+  - Social share buttons inside the sidebar adapt beautifully to the 300px width constraint by rendering in a clean 2-column grid.
+
+## TASK-20260620-202100: History sidebar integration
+
+### START RECORD
+- STATUS: COMPLETED
+- Start time: 2026-06-20T20:21:00Z
+- User request: Do the same with History (make it a right sidebar panel instead of a redirect) and fetch the current user's translations history based on meeting ID.
+- Preservation constraints: Keep all existing sidebar design tokens (`sidebar-panel`, `sidebar-header`, etc.), active sidebar toggling logic, and the separate `/history` route for standalone history checks.
+- Success criteria:
+  - History button in ControlBar and mobile menu toggles a right-hand sidebar panel (`HistorySidebar`) instead of redirecting the user to `/history`. ✓
+  - Sidebar queries Supabase and localStorage for entries matched to the current roomName (meeting ID). ✓
+  - Sidebar shows a search bar, empty state, and formatted speech card items (Speaker name, languages with flags, timestamp, source text, and translation). ✓
+  - Design matches the "soft UI" premium dark theme and coordinates with other panels. ✓
+
+### TODO
+- [x] Create `src/app/session/[id]/room/HistorySidebar.tsx`.
+- [x] Integrate `"history"` active sidebar type and render the component in `InCall.tsx`.
+- [x] Update `ControlBar.tsx` button triggers and mobile menu links.
+- [x] Add sidebar-specific layout and scrollable list styles in `src/app/globals.css`.
+- [x] Update task ledger.
+
+### FINAL REPORT
+- STATUS: COMPLETED
+- End time: 2026-06-20T20:26:00Z
+- Files changed:
+  - `src/app/session/[id]/room/HistorySidebar.tsx` (NEW) — Right-sidebar component for meeting history
+  - `src/app/session/[id]/room/InCall.tsx` — Declared and rendered HistorySidebar
+  - `src/app/session/[id]/room/ControlBar.tsx` — Connected History controls to sidebar toggle
+  - `src/app/globals.css` — Styled search field, status spinners, and entry cards for sidebar width
+  - `TASK.md` — Task ledger updated
+- Notes:
+  - The history panel queries database entries matching the current meeting ID, allowing participants to review previous translations without leaving the active call.

@@ -9,6 +9,7 @@ import {
 } from "@livekit/components-react";
 import "@livekit/components-styles";
 import PersistentCallBar from "@/components/PersistentCallBar";
+import { useUser } from "@/context/UserContext";
 
 export interface ActiveCallState {
   token: string;
@@ -25,14 +26,18 @@ interface CallContextValue {
 
 const CallContext = createContext<CallContextValue | undefined>(undefined);
 
-export function CallProvider({ children }: { children: ReactNode }) {
+function CallProviderInner({ children }: { children: ReactNode }) {
   const router = useRouter();
+  const { profile } = useUser();
   const [activeCall, setActiveCall] = useState<ActiveCallState | null>(null);
 
   const leaveCall = () => {
     setActiveCall(null);
-    router.push("/");
+    router.push("/dashboard");
   };
+
+  // Get speaker device ID from profile for audio output (enables proper AEC)
+  const speakerDeviceId = profile?.speaker_device_id;
 
   return (
     <CallContext.Provider value={{ activeCall, setActiveCall, leaveCall }}>
@@ -43,6 +48,9 @@ export function CallProvider({ children }: { children: ReactNode }) {
           video={false}
           audio={false}
           connect={true}
+          options={{
+            audioOutput: speakerDeviceId ? { deviceId: speakerDeviceId } : undefined,
+          }}
           onDisconnected={() => {
             setActiveCall(null);
           }}
@@ -61,6 +69,17 @@ export function CallProvider({ children }: { children: ReactNode }) {
       )}
     </CallContext.Provider>
   );
+}
+
+export function CallProvider({ children }: { children: ReactNode }) {
+  // Ensure UserProvider is available
+  const { loading } = useUser();
+
+  if (loading) {
+    return <>{children}</>;
+  }
+
+  return <CallProviderInner>{children}</CallProviderInner>;
 }
 
 export function useCallContext() {

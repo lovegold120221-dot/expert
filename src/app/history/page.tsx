@@ -187,7 +187,7 @@ export default function HistoryPage() {
             </p>
             <button
               className="btn btn-dark"
-              onClick={() => router.push("/")}
+              onClick={() => router.push("/dashboard")}
             >
               Go to Meetings
             </button>

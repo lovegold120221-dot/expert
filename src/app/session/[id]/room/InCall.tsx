@@ -22,8 +22,11 @@ import CaptionsSidebar from "./CaptionsSidebar";
 import BreakoutSidebar from "./BreakoutSidebar";
 import ScreenShareView from "./ScreenShareView";
 import OrbitTranslationPanel from "./OrbitTranslationPanel";
+import OrbitAISidebar from "./OrbitAISidebar";
+import ShareSidebar from "./ShareSidebar";
+import HistorySidebar from "./HistorySidebar";
 import GalleryView from "./GalleryView";
-import { SpeakerIcon, SpeakerOffIcon, ChevronDownIcon, LinkIcon, ShieldCheckIcon, FilmIcon } from "./icons";
+import { SpeakerIcon, SpeakerOffIcon, ChevronDownIcon, LinkIcon, ShieldCheckIcon, FilmIcon, MagicWandIcon } from "./icons";
 
 export default function InCall({
   initialLang,
@@ -38,7 +41,7 @@ export default function InCall({
   const { profile } = useUser();
   const [lang, setLang] = useState(initialLang);
   const [translatorMuted, setTranslatorMuted] = useState(false);
-  const [activeSidebar, setActiveSidebar] = useState<"participants" | "captions" | "translation" | "chat" | "breakout" | null>("translation");
+  const [activeSidebar, setActiveSidebar] = useState<"participants" | "captions" | "translation" | "chat" | "breakout" | "orbit-ai" | "share" | "history" | null>("translation");
   const [speakerMuted, setSpeakerMuted] = useState(true);
   const [headerCopied, setHeaderCopied] = useState(false);
   const [handRaised, setHandRaised] = useState(false);
@@ -115,7 +118,7 @@ export default function InCall({
     }
   });
 
-  const toggleSidebar = (sidebar: "participants" | "captions" | "translation" | "chat" | "breakout") => {
+  const toggleSidebar = (sidebar: "participants" | "captions" | "translation" | "chat" | "breakout" | "orbit-ai" | "share" | "history") => {
     setActiveSidebar((current) => (current === sidebar ? null : sidebar));
   };
 
@@ -323,6 +326,15 @@ export default function InCall({
           )}
           {activeSidebar === "breakout" && (
             <BreakoutSidebar onClose={() => setActiveSidebar(null)} />
+          )}
+          {activeSidebar === "orbit-ai" && (
+            <OrbitAISidebar onClose={() => setActiveSidebar(null)} />
+          )}
+          {activeSidebar === "share" && (
+            <ShareSidebar onClose={() => setActiveSidebar(null)} />
+          )}
+          {activeSidebar === "history" && (
+            <HistorySidebar onClose={() => setActiveSidebar(null)} roomName={room.name} />
           )}
         </main>
 

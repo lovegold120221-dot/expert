@@ -402,3 +402,21 @@ export function FilmIcon() {
     </svg>
   );
 }
+
+export function MagicWandIcon() {
+  return (
+    <svg {...baseProps}>
+      <path d="M14.5 3.5L20.5 9.5" />
+      <path d="M3.5 14.5L9.5 20.5" />
+      <path d="M17 4L20 7" />
+      <path d="M4 17L7 20" />
+      <path d="M15 5L19 9" />
+      <path d="M5 15L9 19" />
+      <path d="M12 2L12 6" />
+      <path d="M2 12L6 12" />
+      <path d="M18 12L22 12" />
+      <path d="M12 18L12 22" />
+      <path d="M8 8L16 16" />
+    </svg>
+  );
+}

@@ -398,15 +398,27 @@ export default function PreFlightPage({
         audioOutputs.map((d) => ({ deviceId: d.deviceId, label: d.label || `Speaker ${audioOutputs.indexOf(d) + 1}` }))
       );
 
-      // Auto-select first camera if none selected
+      // Auto-select saved devices from profile, or first available if none saved
       if (!selectedCam && videoDevices.length > 0) {
-        setSelectedCam(videoDevices[0].deviceId);
+        const savedCam = profile?.cam_device_id;
+        const camToUse = savedCam && videoDevices.some(d => d.deviceId === savedCam)
+          ? savedCam
+          : videoDevices[0].deviceId;
+        setSelectedCam(camToUse);
       }
       if (!selectedMic && audioInputs.length > 0) {
-        setSelectedMic(audioInputs[0].deviceId);
+        const savedMic = profile?.mic_device_id;
+        const micToUse = savedMic && audioInputs.some(d => d.deviceId === savedMic)
+          ? savedMic
+          : audioInputs[0].deviceId;
+        setSelectedMic(micToUse);
       }
       if (!selectedSpeaker && audioOutputs.length > 0) {
-        setSelectedSpeaker(audioOutputs[0].deviceId);
+        const savedSpeaker = profile?.speaker_device_id;
+        const speakerToUse = savedSpeaker && audioOutputs.some(d => d.deviceId === savedSpeaker)
+          ? savedSpeaker
+          : audioOutputs[0].deviceId;
+        setSelectedSpeaker(speakerToUse);
       }
     } catch (err: unknown) {
       const msg = err instanceof DOMException && err.name === "NotAllowedError"
@@ -490,8 +502,9 @@ export default function PreFlightPage({
 
   const handleCameraChange = useCallback((deviceId: string) => {
     setSelectedCam(deviceId);
+    updateProfile({ cam_device_id: deviceId });
     startPreview(deviceId);
-  }, [startPreview]);
+  }, [startPreview, updateProfile]);
 
   const flipCamera = useCallback(() => {
     setUsingFrontCam((prev) => !prev);
@@ -514,11 +527,13 @@ export default function PreFlightPage({
 
   const handleMicChange = useCallback((deviceId: string) => {
     setSelectedMic(deviceId);
-  }, []);
+    updateProfile({ mic_device_id: deviceId });
+  }, [updateProfile]);
 
   const handleSpeakerChange = useCallback((deviceId: string) => {
     setSelectedSpeaker(deviceId);
-  }, []);
+    updateProfile({ speaker_device_id: deviceId });
+  }, [updateProfile]);
 
   // ── Save preferences on mount ──────────────────────────────────────────
 
@@ -578,7 +593,7 @@ export default function PreFlightPage({
         <button
           type="button"
           className="preflight-close"
-          onClick={() => router.push("/")}
+          onClick={() => router.push("/dashboard")}
           title="Go back"
           aria-label="Close"
         >

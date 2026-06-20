@@ -50,8 +50,8 @@ export default function UpdatePasswordPage() {
           </div>
           <h1 className="auth-title">Password updated</h1>
           <p className="auth-desc">Your password has been changed successfully.</p>
-          <button className="btn btn-dark auth-submit" onClick={() => router.push("/")}>
-            Go to home
+          <button className="btn btn-dark auth-submit" onClick={() => router.push("/dashboard")}>
+            Go to meetings
           </button>
         </div>
       </main>

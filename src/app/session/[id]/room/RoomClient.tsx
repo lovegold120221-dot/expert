@@ -121,8 +121,8 @@ export default function RoomClient({ sessionId }: { sessionId: string }) {
           <p className="body mb-24">
             {error}
           </p>
-          <button className="btn btn-outline" onClick={() => router.push("/")}>
-            Back to home
+          <button className="btn btn-outline" onClick={() => router.push("/dashboard")}>
+            Back to meetings
           </button>
         </div>
       </div>

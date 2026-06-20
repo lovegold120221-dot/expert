@@ -41,7 +41,7 @@ export default function SignupPage() {
       setLoading(false);
     } else if (session) {
       // Auto-confirmed — redirect straight to home, no manual sign-in needed
-      router.push("/");
+      router.push("/dashboard");
     } else {
       // Email confirmation required — show "check your email" screen
       setConfirmationSent(true);

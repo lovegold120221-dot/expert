@@ -3,7 +3,7 @@
 **Real-time AI voice translation for video meetings.**  
 Speak your language. Hear theirs. Translation spins up on demand — same-language pairs cost nothing.
 
-Proudly built by [Eburon AI](https://eburon.ai) — founded by Joe Lernout.
+Proudly built by [Eburon AI](https://eburon.ai) — founded by Jo Lernout.
 
 🌐 **Live at [orbit.eburon.ai](https://orbit.eburon.ai/)**
 
