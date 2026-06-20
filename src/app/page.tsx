@@ -53,7 +53,7 @@ const featureCards: Array<{
   },
   {
     title: "Zero Translation Cost",
-    body: "Smart routing ensures same-language pairs bypass Gemini API entirely.",
+    body: "Smart routing ensures same-language pairs makes it very efficient.",
     icon: <ShieldIcon />,
   },
 ];
