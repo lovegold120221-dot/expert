@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Orbit Meeting | Real-Time AI Voice Translation</title>
+    
+    <!-- Google Fonts: Inter for that sleek, modern enterprise AI aesthetic -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Tailwind Configuration matching the attached UI image -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        orbit: {
+                            card: '#222222',     /* Card surface from image */
+                            border: '#333333',   /* Subtle borders */
+                            text: '#E5E5E5',     /* Primary off-white text */
+                            muted: '#888888',    /* Muted placeholder text */
+                            btn: '#A3A39E',      /* Warm greige button from the screenshot */
+                            btnHover: '#B8B8B3'  /* Slightly lighter for hover */
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['"Inter"', 'sans-serif'],
+                    },
+                    backgroundImage: {
+                        'dark-gradient': 'linear-gradient(180deg, #262626 0%, #141414 35%, #080808 100%)',
+                        'radial-glow': 'radial-gradient(circle at 50% -20%, rgba(163, 163, 158, 0.15) 0%, transparent 50%)',
+                    },
+                    animation: {
+                        'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                        'flow-right': 'flowRight 2s linear infinite',
+                        'flow-left': 'flowLeft 2s linear infinite',
+                        'flow-down': 'flowDown 2s linear infinite',
+                    },
+                    keyframes: {
+                        flowRight: {
+                            '0%': { transform: 'translateX(-100%)', opacity: '0' },
+                            '50%': { opacity: '1' },
+                            '100%': { transform: 'translateX(100%)', opacity: '0' },
+                        },
+                        flowLeft: {
+                            '0%': { transform: 'translateX(100%)', opacity: '0' },
+                            '50%': { opacity: '1' },
+                            '100%': { transform: 'translateX(-100%)', opacity: '0' },
+                        },
+                        flowDown: {
+                            '0%': { transform: 'translateY(-100%)', opacity: '0' },
+                            '50%': { opacity: '1' },
+                            '100%': { transform: 'translateY(100%)', opacity: '0' },
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        body {
+            background-color: #080808;
+            color: theme('colors.orbit.text');
+        }
+        
+        /* Premium glassmorphism card styles */
+        .glass-card {
+            background: rgba(34, 34, 34, 0.4);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid theme('colors.orbit.border');
+            transition: all 0.3s ease;
+        }
+
+        .glass-card-hover:hover {
+            border-color: rgba(163, 163, 158, 0.4);
+            background: rgba(34, 34, 34, 0.6);
+        }
+
+        /* Gradient text for premium headings */
+        .gradient-text {
+            background: linear-gradient(180deg, #FFFFFF 0%, #A3A39E 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+    </style>
+</head>
+<body class="font-sans antialiased relative overflow-x-hidden bg-dark-gradient min-h-screen">
+
+    <!-- Ambient Top Glow -->
+    <div class="absolute inset-0 bg-radial-glow pointer-events-none z-0 h-[800px]"></div>
+
+    <!-- Navigation -->
+    <nav class="relative z-10 w-full px-6 py-6 max-w-7xl mx-auto flex justify-between items-center">
+        <div class="flex items-center gap-3">
+            <!-- Official Eburon AI Logo -->
+            <img src="https://eburon.ai/icon-eburon.svg" alt="Eburon AI Logo" class="w-8 h-8">
+            <span class="font-semibold text-xl tracking-tight text-white">Orbit Meeting</span>
+        </div>
+        <div class="hidden md:flex items-center gap-8 text-sm font-medium text-orbit-muted">
+            <a href="#features" class="hover:text-white transition-colors">Platform</a>
+            <a href="#architecture" class="hover:text-white transition-colors">Architecture</a>
+            <a href="https://eburon.ai" target="_blank" class="hover:text-white transition-colors">Eburon AI</a>
+        </div>
+        <div>
+            <a href="https://orbit.eburon.ai/" class="px-5 py-2.5 rounded-lg bg-orbit-btn text-black font-semibold hover:bg-orbit-btnHover transition-all text-sm shadow-[0_0_15px_rgba(163,163,158,0.2)]">
+                Get Started
+            </a>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <header class="relative z-10 pt-28 pb-32 px-6 max-w-7xl mx-auto flex flex-col items-center text-center">
+        <div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-orbit-border bg-orbit-card/50 text-xs font-semibold text-orbit-btn mb-8 uppercase tracking-wider shadow-sm">
+            <span class="w-2 h-2 rounded-full bg-orbit-btn animate-pulse"></span>
+            Powered by Eburon AI
+        </div>
+        
+        <h1 class="text-5xl md:text-7xl font-bold tracking-tight text-white mb-6 max-w-4xl leading-[1.1]">
+            Speak your language. <br/>
+            <span class="gradient-text">Hear theirs.</span>
+        </h1>
+        
+        <p class="text-lg md:text-xl text-orbit-muted mb-10 max-w-2xl font-light leading-relaxed">
+            Real-time AI voice translation for video meetings. Translation spins up on demand across 240+ languages. Same-language pairs cost nothing.
+        </p>
+        
+        <div class="flex flex-col sm:flex-row items-center justify-center gap-4 w-full sm:w-auto">
+            <a href="https://orbit.eburon.ai/" class="w-full sm:w-auto px-8 py-3.5 rounded-lg bg-orbit-btn text-black font-semibold hover:bg-orbit-btnHover transition-all text-center shadow-[0_0_20px_rgba(163,163,158,0.2)]">
+                Start a Meeting
+            </a>
+            <a href="#architecture" class="w-full sm:w-auto px-8 py-3.5 rounded-lg border border-orbit-border bg-[#1A1A1A] text-white hover:bg-orbit-card transition-all text-center font-medium">
+                View Architecture
+            </a>
+        </div>
+
+        <!-- Abstract App Interface Graphic -->
+        <div class="mt-20 w-full max-w-5xl relative rounded-2xl border border-orbit-border overflow-hidden shadow-2xl bg-black group">
+            <div class="absolute inset-0 bg-gradient-to-t from-[#080808] via-[#080808]/40 to-transparent z-10"></div>
+            <!-- Large Hero Background Image -->
+            <img src="https://images.unsplash.com/photo-1516321318423-f06f85e504b3?q=80&w=2000&auto=format&fit=crop" 
+                 alt="Digital Network Matrix" 
+                 class="w-full h-[400px] object-cover opacity-40 group-hover:opacity-60 transition-opacity duration-700 grayscale">
+            
+            <!-- Overlay UI Element mimicking the translator -->
+            <div class="absolute bottom-8 left-1/2 -translate-x-1/2 z-20 glass-card p-4 rounded-xl flex items-center justify-between w-[90%] max-w-md">
+                <div class="flex items-center gap-4">
+                    <div class="w-10 h-10 rounded-full bg-black border border-orbit-border flex items-center justify-center">
+                        <span class="text-xs font-semibold text-orbit-btn">EN</span>
+                    </div>
+                    <div class="text-left">
+                        <p class="text-sm text-white font-medium">Live Translation Active</p>
+                        <p class="text-xs text-orbit-muted">Routing voice streams...</p>
+                    </div>
+                </div>
+                <div class="flex gap-1">
+                    <div class="w-1 h-3 bg-orbit-btn rounded-full animate-[bounce_1s_infinite]"></div>
+                    <div class="w-1 h-5 bg-orbit-btn rounded-full animate-[bounce_1.2s_infinite]"></div>
+                    <div class="w-1 h-3 bg-orbit-btn rounded-full animate-[bounce_0.8s_infinite]"></div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Bento Grid Features Section -->
+    <section id="features" class="relative z-10 py-24 border-y border-orbit-border bg-[#0a0a0a]/50">
+        <div class="max-w-7xl mx-auto px-6">
+            <div class="mb-16 md:flex justify-between items-end">
+                <div class="max-w-2xl">
+                    <h2 class="text-3xl md:text-4xl font-bold text-white mb-4 tracking-tight">Engineered for global scale</h2>
+                    <p class="text-orbit-muted text-lg">A robust architecture combining low-latency edge networks with advanced vocal translation models.</p>
+                </div>
+            </div>
+
+            <!-- Bento Box Grid Layout -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 auto-rows-[300px]">
+                
+                <!-- Feature 1: Large Image Card (Span 2) -->
+                <div class="glass-card glass-card-hover rounded-2xl relative overflow-hidden group col-span-1 md:col-span-2 flex flex-col justify-end p-8 border border-orbit-border">
+                    <img src="https://images.unsplash.com/photo-1451187580459-43490279c0fa?q=80&w=1500&auto=format&fit=crop" alt="Global Network" class="absolute inset-0 w-full h-full object-cover opacity-20 group-hover:opacity-30 group-hover:scale-105 transition-all duration-700 grayscale mix-blend-screen z-0">
+                    <div class="absolute inset-0 bg-gradient-to-t from-[#080808] via-[#141414]/60 to-transparent z-10"></div>
+                    <div class="relative z-20">
+                        <h3 class="text-2xl font-bold text-white mb-3">240+ Languages</h3>
+                        <p class="text-orbit-muted leading-relaxed max-w-lg">Pick your native language from the world's most comprehensive list. You speak yours, they hear theirs. It's that simple.</p>
+                    </div>
+                </div>
+
+                <!-- Feature 2: Standard Card -->
+                <div class="glass-card glass-card-hover rounded-2xl p-8 relative overflow-hidden group flex flex-col justify-between border border-orbit-border">
+                    <div class="relative z-20">
+                        <div class="w-12 h-12 rounded-lg bg-[#1A1A1A] border border-orbit-border flex items-center justify-center mb-6">
+                            <svg class="w-6 h-6 text-orbit-btn" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+                            </svg>
+                        </div>
+                        <h3 class="text-xl font-bold text-white mb-2">Faithful Vocal Mimic</h3>
+                        <p class="text-sm text-orbit-muted leading-relaxed">Preserves the original speaker's speed, rhythm, pitch contour, and emotion perfectly.</p>
+                    </div>
+                    <!-- Subtle abstract background wave -->
+                    <img src="https://images.unsplash.com/photo-1618060851174-8898165b61bd?q=80&w=600&auto=format&fit=crop" class="absolute -bottom-10 -right-10 w-48 h-48 object-cover opacity-10 grayscale z-0 mix-blend-screen rounded-full blur-xl">
+                </div>
+
+                <!-- Feature 3: Standard Card -->
+                <div class="glass-card glass-card-hover rounded-2xl p-8 flex flex-col justify-between border border-orbit-border relative overflow-hidden">
+                    <div class="relative z-20">
+                        <div class="w-12 h-12 rounded-lg bg-[#1A1A1A] border border-orbit-border flex items-center justify-center mb-6">
+                            <svg class="w-6 h-6 text-orbit-btn" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path>
+                            </svg>
+                        </div>
+                        <h3 class="text-xl font-bold text-white mb-2">40 Participants per Room</h3>
+                        <p class="text-sm text-orbit-muted leading-relaxed">Host large global meetings natively with breakout rooms and host moderation.</p>
+                    </div>
+                </div>
+
+                <!-- Feature 4: Large Image Card (Span 2) -->
+                <div class="glass-card glass-card-hover rounded-2xl relative overflow-hidden group col-span-1 md:col-span-2 flex flex-col justify-end p-8 border border-orbit-border">
+                    <img src="https://images.unsplash.com/photo-1606857521015-7f9fcf423740?q=80&w=1500&auto=format&fit=crop" alt="Multiple Devices" class="absolute inset-0 w-full h-full object-cover opacity-20 group-hover:opacity-30 group-hover:scale-105 transition-all duration-700 grayscale mix-blend-screen z-0">
+                    <div class="absolute inset-0 bg-gradient-to-t from-[#080808] via-[#141414]/70 to-transparent z-10"></div>
+                    <div class="relative z-20">
+                        <h3 class="text-2xl font-bold text-white mb-3">Cross-Platform Access</h3>
+                        <p class="text-orbit-muted leading-relaxed max-w-lg">Join from the Web, install the PWA, or download our native Electron desktop app (macOS/Windows/Linux) and Android APK.</p>
+                    </div>
+                </div>
+
+                <!-- Feature 5: Standard Card -->
+                <div class="glass-card glass-card-hover rounded-2xl p-8 flex flex-col justify-between border border-orbit-border">
+                    <div>
+                        <div class="w-12 h-12 rounded-lg bg-[#1A1A1A] border border-orbit-border flex items-center justify-center mb-6">
+                            <svg class="w-6 h-6 text-orbit-btn" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path>
+                            </svg>
+                        </div>
+                        <h3 class="text-xl font-bold text-white mb-2">Screen Share Audio</h3>
+                        <p class="text-sm text-orbit-muted leading-relaxed">Sharing a video? The agent automatically ducks the original audio and translates the content.</p>
+                    </div>
+                </div>
+
+                <!-- Feature 6: Standard Card (Span 2) -->
+                <div class="glass-card glass-card-hover rounded-2xl p-8 flex flex-col justify-between border border-orbit-border col-span-1 md:col-span-2">
+                    <div>
+                        <div class="w-12 h-12 rounded-lg bg-[#1A1A1A] border border-orbit-border flex items-center justify-center mb-6">
+                            <svg class="w-6 h-6 text-orbit-btn" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path>
+                            </svg>
+                        </div>
+                        <h3 class="text-xl font-bold text-white mb-2">Zero Translation Cost</h3>
+                        <p class="text-sm text-orbit-muted leading-relaxed">Smart routing ensures same-language pairs by Eburon Multilingual support.</p>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </section>
+
+    <!-- Architecture Visual Section -->
+    <section id="architecture" class="py-24 max-w-7xl mx-auto px-6 relative">
+        <div class="flex flex-col lg:flex-row gap-16 items-center">
+            
+            <!-- Abstract Translation Flow Visualizer -->
+            <div class="flex-1 w-full flex flex-col justify-center py-10 relative">
+                <div class="absolute inset-0 bg-radial-glow opacity-30 pointer-events-none rounded-3xl"></div>
+                
+                <div class="relative z-10 flex flex-col md:flex-row items-center justify-between gap-6 w-full">
+                    <!-- Sender Node -->
+                    <div class="glass-card p-5 rounded-2xl flex flex-col items-center gap-3 w-40 shrink-0 shadow-lg relative">
+                        <div class="w-12 h-12 rounded-full bg-[#141414] border border-orbit-border flex items-center justify-center shadow-inner">
+                            <span class="font-bold text-white text-sm">EN</span>
+                        </div>
+                        <div class="text-center">
+                            <p class="text-sm font-semibold text-white">Beatrice</p>
+                            <p class="text-xs text-orbit-muted">Speaking English</p>
+                        </div>
+                    </div>
+
+                    <!-- Connection Track 1 (Desktop) -->
+                    <div class="hidden md:block flex-1 h-[2px] bg-gradient-to-r from-orbit-border via-orbit-btn to-orbit-border relative overflow-hidden rounded-full">
+                        <div class="absolute inset-0 bg-white w-1/3 animate-flow-right opacity-30 blur-[2px]"></div>
+                    </div>
+
+                    <!-- Connection Track 1 (Mobile) -->
+                    <div class="md:hidden w-[2px] h-10 bg-gradient-to-b from-orbit-border via-orbit-btn to-orbit-border relative overflow-hidden rounded-full">
+                        <div class="absolute inset-0 bg-white h-1/3 animate-flow-down opacity-30 blur-[2px]"></div>
+                    </div>
+
+                    <!-- Agent Node -->
+                    <div class="glass-card p-6 rounded-2xl flex flex-col items-center gap-2 w-48 shrink-0 shadow-[0_0_30px_rgba(163,163,158,0.15)] border-orbit-btn/40 bg-[#141414] relative z-10">
+                        <div class="absolute -top-3 px-3 py-1 bg-orbit-btn text-black text-[10px] font-bold uppercase tracking-wider rounded-full shadow-md">
+                            Orbit Agent
+                        </div>
+                        <svg class="w-8 h-8 text-orbit-btn animate-pulse-slow mt-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"></path>
+                        </svg>
+                        <p class="text-sm font-semibold text-white mt-1">Real-time Translation</p>
+                        <p class="text-[11px] text-orbit-muted text-center leading-tight">Low-latency vocal rendering</p>
+                    </div>
+
+                    <!-- Connection Track 2 (Desktop) -->
+                    <div class="hidden md:block flex-1 h-[2px] bg-gradient-to-r from-orbit-border via-orbit-btn to-orbit-border relative overflow-hidden rounded-full">
+                        <div class="absolute inset-0 bg-white w-1/3 animate-flow-right opacity-30 blur-[2px]"></div>
+                    </div>
+
+                    <!-- Connection Track 2 (Mobile) -->
+                    <div class="md:hidden w-[2px] h-10 bg-gradient-to-b from-orbit-border via-orbit-btn to-orbit-border relative overflow-hidden rounded-full">
+                        <div class="absolute inset-0 bg-white h-1/3 animate-flow-down opacity-30 blur-[2px]"></div>
+                    </div>
+
+                    <!-- Receiver Node -->
+                    <div class="glass-card p-5 rounded-2xl flex flex-col items-center gap-3 w-40 shrink-0 shadow-lg relative">
+                        <div class="w-12 h-12 rounded-full bg-[#141414] border border-orbit-border flex items-center justify-center shadow-inner">
+                            <span class="font-bold text-white text-sm">ES</span>
+                        </div>
+                        <div class="text-center">
+                            <p class="text-sm font-semibold text-white">Bob</p>
+                            <p class="text-xs text-orbit-muted">Hearing Spanish</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="flex-1">
+                <h2 class="text-3xl md:text-4xl font-bold text-white mb-6 tracking-tight">Sovereign control. Zero lock-in.</h2>
+                <p class="text-orbit-muted text-lg mb-8 leading-relaxed">
+                    Designed for developers and enterprise teams. Self-host the entire Orbit Meeting stack on your own infrastructure — no dependency on cloud providers. Maintain complete data privacy while leveraging cutting-edge voice intelligence.
+                </p>
+                <ul class="space-y-4 text-orbit-muted">
+                    <li class="flex items-center gap-3">
+                        <svg class="w-5 h-5 text-orbit-btn flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                        <span>Supabase auth with secure data persistence</span>
+                    </li>
+                    <li class="flex items-center gap-3">
+                        <svg class="w-5 h-5 text-orbit-btn flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                        <span>Dockerized Python worker agents</span>
+                    </li>
+                    <li class="flex items-center gap-3">
+                        <svg class="w-5 h-5 text-orbit-btn flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                        <span>Open-source WebRTC Server compatible</span>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </section>
+
+    <!-- Image Gallery Showcase (Fixed Middle Image) -->
+    <section class="max-w-7xl mx-auto px-6 py-12">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 h-[300px] md:h-[400px]">
+            <div class="rounded-2xl overflow-hidden border border-orbit-border hidden md:block">
+                <img src="https://images.unsplash.com/photo-1522071820081-009f0129c71c?q=80&w=800&auto=format&fit=crop" class="w-full h-full object-cover grayscale opacity-60 hover:opacity-80 hover:grayscale-0 transition-all duration-500" alt="Team meeting">
+            </div>
+            <!-- FIXED MIDDLE IMAGE -->
+            <div class="rounded-2xl overflow-hidden border border-orbit-border">
+                <img src="https://images.unsplash.com/photo-1542744173-8e7e53415bb0?q=80&w=800&auto=format&fit=crop" class="w-full h-full object-cover grayscale opacity-60 hover:opacity-80 hover:grayscale-0 transition-all duration-500" alt="Business collaboration">
+            </div>
+            <div class="rounded-2xl overflow-hidden border border-orbit-border hidden md:block">
+                <img src="https://images.unsplash.com/photo-1573164713988-8665fc963095?q=80&w=800&auto=format&fit=crop" class="w-full h-full object-cover grayscale opacity-60 hover:opacity-80 hover:grayscale-0 transition-all duration-500" alt="Modern workspace">
+            </div>
+        </div>
+    </section>
+
+    <!-- Bottom CTA Section -->
+    <section class="py-24 text-center px-6 relative z-10 bg-gradient-to-b from-transparent to-[#141414]">
+        <h2 class="text-4xl md:text-5xl font-bold text-white mb-6 tracking-tight">Ready to break the language barrier?</h2>
+        <p class="text-orbit-muted mb-10 max-w-xl mx-auto text-lg">Join a room instantly or create a free account to persist your settings, virtual backgrounds, and recording preferences.</p>
+        <a href="https://orbit.eburon.ai/" class="inline-block px-10 py-4 rounded-lg bg-orbit-btn text-black font-bold hover:bg-orbit-btnHover transition-all text-lg shadow-[0_0_25px_rgba(163,163,158,0.25)]">
+            Create Free Account
+        </a>
+    </section>
+
+    <!-- Footer -->
+    <footer class="border-t border-orbit-border bg-[#080808] py-12 px-6">
+        <div class="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-6">
+            <div class="flex items-center gap-2">
+                <img src="https://eburon.ai/icon-eburon.svg" alt="Eburon AI Logo" class="w-6 h-6 grayscale">
+                <span class="font-semibold text-white tracking-tight">Orbit Meeting</span>
+            </div>
+            
+            <p class="text-sm text-orbit-muted">
+                Proudly built by <a href="https://eburon.ai" target="_blank" class="text-white hover:text-orbit-btn transition-colors font-medium">Eburon AI</a> — founded by Jo Lernout.
+            </p>
+            
+            <div class="flex gap-6 text-sm font-medium text-orbit-muted">
+                <a href="#" class="hover:text-white transition-colors">Privacy</a>
+                <a href="#" class="hover:text-white transition-colors">Terms</a>
+                <a href="https://orbit.eburon.ai/" class="hover:text-white transition-colors">Login</a>
+            </div>
+        </div>
+    </footer>
+
+</body>
+</html>

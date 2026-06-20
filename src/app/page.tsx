@@ -104,7 +104,7 @@ export default function LandingPage() {
       <header className="landing-hero">
         <div className="landing-kicker">
           <span aria-hidden="true" />
-          Powered by Gemini Live
+          Powered by Eburon AI
         </div>
 
         <h1>
