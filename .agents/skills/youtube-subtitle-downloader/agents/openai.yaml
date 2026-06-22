@@ -1,0 +1,4 @@
+interface:
+  display_name: "YouTube Subtitle Downloader"
+  short_description: "Download subtitles from YouTube videos using downsub.com"
+  default_prompt: "Download subtitles from this YouTube video: https://www.youtube.com/watch?v=kp62nkhwjO8"

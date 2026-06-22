@@ -1,0 +1,16 @@
+# Keep this repo as a source skill pack, not a local runtime cache.
+node_modules/
+dist/
+.git/
+*.jpeg
+*.jpg
+*.png
+*.mp3
+*.mov
+*.mp4
+*.zip
+*.node
+gstack/gstack/
+gstack/.agents/
+gstack/.factory/
+gstack/bin/gstack-global-discover

@@ -2632,3 +2632,60 @@ Agent starts, connects to LiveKit Cloud (`wss://eburon-meet-15gd8gwg.livekit.clo
   - `cd translator && uv run pytest` — Passed, 32 tests.
 - Notes:
   - Hardcoded implementation identifiers such as `GEMINI_API_KEY`, `GEMINI_MODEL`, and `"gemini-translator"` remain documented because they must match the current code.
+
+## TASK-20260622-192421: Package OpenCode deployment and global skill sources
+
+### START RECORD
+- STATUS: STARTED
+- Start time: 2026-06-22T19:24:21+08:00
+- User request: Commit OpenCode deployment/config plus all global skill sources with detailed how-to-use and when-to-use instructions for any CLI agent, making this repo usable as a global skill source and including `https://github.com/lovegold120221-dot/eburonhub-skills.git` as the canonical skill source repository.
+- Last known state: Previous OpenCode default model task completed.
+- Preservation constraints: Do not stage or commit unrelated existing application changes. Do not commit secrets, OpenCode auth credentials, dependency folders, generated build artifacts, or large binary media from the local skill cache.
+- Files/directories to inspect:
+  - `/Users/eburon/.config/opencode/opencode.json`
+  - `/Users/eburon/.agents/skills`
+  - `.agents/skills`
+  - `AGENTS.md`
+  - `TASK.md`
+- Success criteria:
+  - Repo contains a project OpenCode config for Ollama `eburon/alpha:latest`.
+  - Repo contains global skill source files under `.agents/skills`.
+  - Repo contains clear instructions for any CLI agent explaining when and how to load skills.
+  - Repo includes canonical source URL `https://github.com/lovegold120221-dot/eburonhub-skills.git`.
+  - Commit includes only the requested OpenCode/skills packaging files and the TASK ledger entry.
+
+### TODO
+- [x] Inspect current git state and existing OpenCode/global skill layout.
+- [x] Copy global skill source files into `.agents/skills` without generated dependencies or heavy binary artifacts.
+- [x] Add repo-level OpenCode config and deployment/install script.
+- [x] Generate skill index with name, description, usage trigger, and source repository links where available.
+- [x] Add CLI-agent usage instructions for using this repo as a global skills pack.
+- [x] Validate JSON/script/docs and run required repo validation.
+- [x] Stage only OpenCode/skills packaging files and commit.
+
+### FINAL REPORT
+- STATUS: COMPLETED
+- End time: 2026-06-22T19:45:00+08:00
+- Files changed:
+  - `opencode.json` — Project OpenCode config using Ollama at `http://127.0.0.1:11434/v1` with default model `ollama/eburon/alpha:latest` and repo/global skill paths.
+  - `.opencode/README.md` — OpenCode deployment notes and verification commands.
+  - `.agents/README.md` — Global skill-pack install and usage guide for CLI agents.
+  - `.agents/AGENTS.md` — Skill loading protocol, trigger rules, and global install instructions for any CLI agent.
+  - `.agents/skills/` — Mirrored 179 committed `SKILL.md` entries plus source/reference/script/template files from the local global skill catalog.
+  - `.agents/skills/INDEX.md` — Generated routing index with when-to-use, how-to-use, and source links.
+  - `.agents/skills/manifest.json` — Generated machine-readable skill manifest.
+  - `.agents/skills/.gitignore` — Guards against committing dependency caches, build artifacts, large generated media, native binaries, and duplicate mirrors.
+  - `scripts/install-global-skills.sh` — Installer that syncs this repo's skills into `~/.agents/skills` and merges OpenCode config for Ollama `eburon/alpha:latest`.
+  - `TASK.md` — Task ledger entry.
+- Validation performed:
+  - JSON parse check for `opencode.json` and `.agents/skills/manifest.json` — Passed.
+  - `bash -n scripts/install-global-skills.sh` — Passed.
+  - `opencode debug config` — Resolved config includes `.agents/AGENTS.md`, `./.agents/skills`, `~/.agents/skills`, and `model: "ollama/eburon/alpha:latest"`.
+  - Secret scan over staged OpenCode/skill files — Only example/test keys were found (`sk-demo...`, `sk-123...`), no real credentials or private keys.
+  - Size/artifact check — No `node_modules`, `dist`, nested `.git`, copied media, or files over 5 MB remain in `.agents/skills`.
+  - `pnpm build` — Passed, 21 routes generated.
+  - `cd translator && uv run pytest` — Passed, 32 tests.
+- CSS/UI preservation: No frontend source, CSS, or UI files changed for this task.
+- Real data/API credential check: No OpenCode auth credentials or API keys committed. Canonical skill source repository recorded as `https://github.com/lovegold120221-dot/eburonhub-skills.git`.
+- Known issues: None.
+- Next step: Push the commit to the desired remote if publication is needed.

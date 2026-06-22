@@ -1,0 +1,4 @@
+interface:
+  display_name: "Autonomous App Generator"
+  short_description: "Builds complete apps from idea to deployment automatically"
+  default_prompt: "Build and deploy a complete URL shortener app"

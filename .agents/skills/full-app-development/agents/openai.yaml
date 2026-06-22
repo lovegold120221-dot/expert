@@ -1,0 +1,4 @@
+interface:
+  display_name: "Full App Development"
+  short_description: "Complete app development from idea to Vercel deployment with GitHub integration"
+  default_prompt: "Build and deploy a full-stack app that [describe your app idea]"

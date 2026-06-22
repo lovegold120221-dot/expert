@@ -1,0 +1,4 @@
+interface:
+  display_name: "YouTube Video Transcription"
+  short_description: "Download YouTube videos and transcribe audio using Whisper AI"
+  default_prompt: "Transcribe this YouTube video to text: https://www.youtube.com/watch?v=kp62nkhwjO8"
