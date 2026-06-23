@@ -12,6 +12,14 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Legacy .js files — pre-existing lint warnings are expected (AGENTS.md).
+    "components/**",
+    // Global skill pack — not app code.
+    ".agents/**",
+    ".opencode/**",
+    // Generated WASM glue code + Electron wrapper.
+    "public/mediapipe/**",
+    "electron/**",
   ]),
 ]);
 

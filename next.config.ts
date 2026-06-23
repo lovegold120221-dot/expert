@@ -1,8 +1,11 @@
 import type { NextConfig } from "next";
 
-// Standalone output is needed for Electron (bundles a Node.js server).
-// Vercel handles its own output, so skip standalone there.
-const isVercel = process.env.VERCEL === "1" || process.env.CI === "true";
+// Standalone output is needed for Electron + Docker (bundles a Node.js server).
+// Vercel handles its own output, so skip standalone only on Vercel.
+// NOTE: we intentionally do NOT skip on CI — CI should validate the same
+// standalone artifact that Docker ships, otherwise a build can pass CI but
+// fail in production.
+const isVercel = process.env.VERCEL === "1";
 
 const nextConfig: NextConfig = {
   output: isVercel ? undefined : "standalone",

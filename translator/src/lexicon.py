@@ -3,7 +3,7 @@ Data sourced from authentic publications (JW.org) to ensure high-fidelity transl
 
 from __future__ import annotations
 
-# Lexicon entries are injected into the Gemini system prompt.
+# Lexicon entries are injected into the AI system prompt.
 # Format: { "concept": "target_dialect_term" }
 DIALECT_LEXICONS: dict[str, dict[str, str]] = {
     "itv": {

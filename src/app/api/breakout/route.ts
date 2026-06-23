@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { RoomServiceClient, AccessToken, RoomConfiguration, RoomAgentDispatch } from "livekit-server-sdk";
 
 // Must match agent_name in agent.py
-const TRANSLATOR_AGENT_NAME = "gemini-translator";
+const TRANSLATOR_AGENT_NAME = "eburon-translator";
 
 export async function POST(req: NextRequest) {
   try {
@@ -11,9 +11,10 @@ export async function POST(req: NextRequest) {
     const apiKey = process.env.LIVEKIT_API_KEY;
     const apiSecret = process.env.LIVEKIT_API_SECRET;
     const serverUrl = process.env.LIVEKIT_URL;
+    const publicServerUrl = process.env.LIVEKIT_PUBLIC_URL || serverUrl;
 
     if (!apiKey || !apiSecret || !serverUrl) {
-      return NextResponse.json({ error: "LiveKit credentials not configured" }, { status: 500 });
+      return NextResponse.json({ error: "Meeting service credentials not configured" }, { status: 500 });
     }
 
     const roomService = new RoomServiceClient(serverUrl, apiKey, apiSecret);
@@ -38,8 +39,9 @@ export async function POST(req: NextRequest) {
               maxParticipants: 8,
             });
             createdRooms.add(newRoom);
-          } catch (e: any) {
-            if (!e.message?.includes("already exists")) {
+          } catch (e: unknown) {
+            const message = e instanceof Error ? e.message : String(e);
+            if (!message.includes("already exists")) {
               console.warn(`Failed to create breakout room ${newRoom}:`, e);
             }
           }
@@ -78,7 +80,7 @@ export async function POST(req: NextRequest) {
           newRoom,
           originalRoom,
           token,
-          serverUrl,
+          serverUrl: publicServerUrl,
           breakoutIdentity: `${identity}-breakout`,
         });
         const data = new TextEncoder().encode(payload);

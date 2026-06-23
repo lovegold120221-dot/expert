@@ -1,4 +1,41 @@
+# Dependencies (installed fresh in the build stage)
 node_modules
+.pnpm-store
+.pnpm-home
+
+# Build artifacts
 .next
 .git
+
+# Env files (never bake secrets into image layers)
 .env.local
+.env
+.env*.local
+
+# Logs and task ledger
+*.log
+TASK.md
+dev.log
+
+# Screenshots / binary media
+*.png
+
+# Non-frontend dirs not needed in the Docker image
+translator
+android
+electron
+landingpage
+stt-whisper
+out
+docs
+
+# Agent / CI metadata
+.agents
+.opencode
+.gemini
+.vscode
+.pytest_cache
+
+# Vercel / CI config
+.vercelignore
+vercel.json

@@ -1,15 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
-import { fetchGeminiWithRetry } from "@/lib/gemini-fetch";
+import { fetchEburonWithRetry } from "@/lib/eburon-fetch";
+import { EBURON_TEXT_MODEL } from "@/lib/config";
 
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-
-const GEMINI_MODEL = "gemini-3.5-flash";
+// Read from the branded env var, with fallback to the legacy name for
+// backwards compatibility with existing .env.local files.
+const EBURON_API_KEY = process.env.EBURON_AI_API_KEY || process.env.GEMINI_API_KEY;
 
 /**
  * POST /api/translate-text
  *
- * Translates a snippet of text using the Gemini API (text generation, not
- * the Live streaming endpoint). Accepts:
+ * Translates a snippet of text using the Eburon AI service (text generation,
+ * not the Live streaming endpoint). Accepts:
  *
  *   { text: string, sourceLang: string, targetLang: string }
  *
@@ -18,9 +19,9 @@ const GEMINI_MODEL = "gemini-3.5-flash";
  *   { translatedText: string }
  */
 export async function POST(req: NextRequest) {
-  if (!GEMINI_API_KEY) {
+  if (!EBURON_API_KEY) {
     return NextResponse.json(
-      { error: "GEMINI_API_KEY not configured on server" },
+      { error: "AI service key not configured on server" },
       { status: 500 },
     );
   }
@@ -56,8 +57,8 @@ Text to translate:
 ${text}`;
 
   try {
-    const response = await fetchGeminiWithRetry(
-      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
+    const response = await fetchEburonWithRetry(
+      `https://generativelanguage.googleapis.com/v1beta/models/${EBURON_TEXT_MODEL}:generateContent?key=${EBURON_API_KEY}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -79,12 +80,12 @@ ${text}`;
     if (!response.ok) {
       const errBody = await response.text().catch(() => "");
       console.error(
-        "Eburon API error:",
+        "Eburon AI service error:",
         response.status,
         errBody.slice(0, 500),
       );
       return NextResponse.json(
-        { error: `Eburon API returned ${response.status}` },
+        { error: `AI service returned ${response.status}` },
         { status: 502 },
       );
     }
@@ -93,9 +94,9 @@ ${text}`;
     const translated = data?.candidates?.[0]?.content?.parts?.[0]?.text;
 
     if (!translated) {
-      console.error("Unexpected Eburon response:", JSON.stringify(data).slice(0, 500));
+      console.error("Unexpected AI service response:", JSON.stringify(data).slice(0, 500));
       return NextResponse.json(
-        { error: "Eburon returned an empty response" },
+        { error: "AI service returned an empty response" },
         { status: 502 },
       );
     }

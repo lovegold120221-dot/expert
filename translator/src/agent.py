@@ -19,6 +19,14 @@ logger = logging.getLogger("translator.agent")
 
 load_dotenv(".env.local")
 
+# Fail fast at worker startup if the API key is missing — without it every
+# room would dispatch the agent and get no translation with no alert.
+if not os.environ.get("EBURON_AI_API_KEY") and not os.environ.get("GEMINI_API_KEY"):
+    raise RuntimeError(
+        "EBURON_AI_API_KEY (or legacy GEMINI_API_KEY) is not set — "
+        "the translator agent cannot start. Set it in translator/.env.local"
+    )
+
 
 server = AgentServer()
 
@@ -26,16 +34,17 @@ server = AgentServer()
 # Dispatch name. Must match TRANSLATOR_AGENT_NAME in src/app/api/token/route.ts.
 # We use a unique name (not "translator") so we don't collide with stale Cloud
 # Agents registered under common names — see git history for the diagnosis.
-@server.rtc_session(agent_name="gemini-translator")
+@server.rtc_session(agent_name="eburon-translator")
 async def translator_entrypoint(ctx: JobContext) -> None:
     """One worker process per room. Subscribes to all human mic tracks and
     publishes translator tracks based on per-participant `lang` attributes."""
     ctx.log_context_fields = {"room": ctx.room.name}
 
-    api_key = os.environ.get("GEMINI_API_KEY")
+    api_key = os.environ.get("EBURON_AI_API_KEY") or os.environ.get("GEMINI_API_KEY")
     if not api_key:
-        logger.error("GEMINI_API_KEY is not set; refusing to start")
-        return
+        # Double-check per-room (env could be cleared at runtime).
+        logger.error("No AI service API key configured; refusing to start")
+        raise RuntimeError("EBURON_AI_API_KEY (or GEMINI_API_KEY) is not set")
 
     await ctx.connect(auto_subscribe=AutoSubscribe.AUDIO_ONLY)
 
@@ -45,7 +54,7 @@ async def translator_entrypoint(ctx: JobContext) -> None:
     except Exception as exc:
         logger.debug("set agent state attr failed: %s", exc)
 
-    router = TranslationRouter(ctx.room, gemini_api_key=api_key)
+    router = TranslationRouter(ctx.room, eburon_api_key=api_key)
     router.start()
 
     async def _shutdown() -> None:

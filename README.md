@@ -342,10 +342,16 @@ Requires these secrets on the GitHub repo:
 | `VERCEL_ORG_ID`                | Vercel project settings                                        |
 | `VERCEL_PROJECT_ID`            | Vercel project settings                                        |
 | `LIVEKIT_URL`                  | LiveKit Cloud dashboard                                        |
+| `LIVEKIT_PUBLIC_URL`           | Optional branded WSS alias returned to browsers                |
 | `LIVEKIT_API_KEY`              | LiveKit Cloud dashboard                                        |
 | `LIVEKIT_API_SECRET`           | LiveKit Cloud dashboard                                        |
 | `NEXT_PUBLIC_SUPABASE_URL`     | Supabase project settings                                      |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY`| Supabase project settings                                      |
+
+`LIVEKIT_PUBLIC_URL` is for brand/privacy hygiene, not secrecy. Browsers must
+open a WebSocket to LiveKit, so DevTools will always show the connected WSS
+host. Configure this as a custom LiveKit domain or reverse proxy such as
+`wss://livekit.yourdomain.com` to avoid exposing the raw provider project URL.
 
 ### Agent — to LiveKit Cloud Agents
 
@@ -508,6 +514,7 @@ services:
 | Variable | Value (self-hosted) |
 |----------|-------------------|
 | `LIVEKIT_URL` | `ws://localhost:7880` (or `wss://lk.yourdomain.com`) |
+| `LIVEKIT_PUBLIC_URL` | Optional browser-facing alias; defaults to `LIVEKIT_URL` |
 | `LIVEKIT_API_KEY` | The key name from `LIVEKIT_KEYS` (e.g. `mykey`) |
 | `LIVEKIT_API_SECRET` | The key secret from `LIVEKIT_KEYS` (e.g. `mysecret`) |
 | `GEMINI_API_KEY` | Your Eburon AI API key (still required — no self-hosted LLM fallback yet) |
@@ -548,7 +555,7 @@ The agent dispatch name `"gemini-translator"` is hardcoded in **two places** —
 
 | File                    | Variables                                                                | Used by              |
 |-------------------------|--------------------------------------------------------------------------|----------------------|
-| `.env.local`            | `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`                   | Frontend token route |
+| `.env.local`            | `LIVEKIT_URL`, optional `LIVEKIT_PUBLIC_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` | Frontend token route |
 | `translator/.env.local` | `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, `GEMINI_API_KEY` | Python agent         |
 | `.env` (not committed)  | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`              | Settings persistence |
 

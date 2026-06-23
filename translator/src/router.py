@@ -1,4 +1,4 @@
-"""Reconciles the set of active GeminiSession instances to room demand."""
+"""Reconciles the set of active EburonSession instances to room demand."""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ from livekit import rtc
 
 from config import (
     AVAILABLE_VOICES,
+    EBURON_RETRANSLATION_MODEL,
     GLOSSARY_ATTR,
     NATIVE_LANG,
     ORBIT_VOICE_ECHO_ALLOWED,
@@ -20,7 +21,7 @@ from config import (
     RECONCILE_DEBOUNCE_SEC,
     SESSION_GRACE_SEC,
 )
-from session import GeminiSession
+from session import EburonSession
 
 logger = logging.getLogger("translator.router")
 
@@ -58,18 +59,18 @@ class TranslationRouter:
       AND speaker S has an enabled mic track AND S.lang != T.
 
     Mute or last-listener-leaves triggers a SESSION_GRACE_SEC teardown so brief
-    coughs/toggles don't thrash Gemini connections.
+    coughs/toggles don't thrash AI connections.
     """
 
-    def __init__(self, room: rtc.Room, gemini_api_key: str) -> None:
+    def __init__(self, room: rtc.Room, eburon_api_key: str) -> None:
         self._room = room
-        self._gemini_api_key = gemini_api_key
+        self._eburon_api_key = eburon_api_key
 
         # Per-speaker mic track that is currently subscribed and unmuted.
         self._speaker_tracks: dict[str, dict[str, rtc.RemoteAudioTrack]] = {}
 
         # Active sessions keyed by (speaker_identity, target_lang).
-        self._sessions: dict[SessionKey, GeminiSession] = {}
+        self._sessions: dict[SessionKey, EburonSession] = {}
 
         # Pending teardown timers keyed the same way.
         self._grace_tasks: dict[SessionKey, asyncio.Task] = {}
@@ -79,6 +80,10 @@ class TranslationRouter:
         self._detached_tasks: set[asyncio.Task] = set()
 
         self._reconcile_handle: asyncio.TimerHandle | None = None
+        # Track the in-flight reconcile task so we can cancel-and-await it
+        # before starting a new one, preventing stale-snapshot thrash under
+        # rapid mute/unmute churn.
+        self._reconcile_task: asyncio.Task | None = None
         self._reconcile_lock = asyncio.Lock()
 
     # --- Lifecycle ---------------------------------------------------------
@@ -93,11 +98,17 @@ class TranslationRouter:
         @room.on("data_received")
         def _on_data_received(data: rtc.DataPacket) -> None:
             if data.topic == "retranslation_request":
-                asyncio.create_task(self._handle_retranslation(data))
+                task = asyncio.create_task(self._handle_retranslation(data))
+                self._detached_tasks.add(task)
+                task.add_done_callback(self._detached_tasks.discard)
 
         @room.on("participant_disconnected")
         def _on_disc(p: rtc.RemoteParticipant) -> None:
-            self._on_participant_left(p.identity)
+            # Schedule the cleanup through the reconcile lock to avoid
+            # mutating _sessions while a concurrent _reconcile iterates it.
+            task = asyncio.create_task(self._on_participant_left(p.identity))
+            self._detached_tasks.add(task)
+            task.add_done_callback(self._detached_tasks.discard)
             self._schedule_reconcile()
 
         @room.on("participant_attributes_changed")
@@ -174,25 +185,36 @@ class TranslationRouter:
         loop = asyncio.get_event_loop()
         if self._reconcile_handle is not None:
             self._reconcile_handle.cancel()
+            self._reconcile_handle = None
+        # Cancel any in-flight reconcile task so only one runs at a time,
+        # preventing stale-snapshot thrash under rapid state changes.
+        if self._reconcile_task is not None and not self._reconcile_task.done():
+            self._reconcile_task.cancel()
+            self._reconcile_task = None
         self._reconcile_handle = loop.call_later(
             RECONCILE_DEBOUNCE_SEC,
-            lambda: asyncio.create_task(self._reconcile()),
+            lambda: self._start_reconcile(),
         )
+
+    def _start_reconcile(self) -> None:
+        """Create the reconcile task and track it so the next _schedule_reconcile
+        can cancel it if it hasn't finished yet."""
+        self._reconcile_task = asyncio.create_task(self._reconcile())
 
     async def _reconcile(self) -> None:
         async with self._reconcile_lock:
             listeners = self._listener_target_langs()
             speakers = self._active_speakers()
             desired = self._compute_desired_sessions()
-            
+
             logger.info(
                 "Reconciling room=%s: listeners=%s, speakers=%s, desired_sessions=%s",
                 self._room.name,
                 listeners,
                 speakers,
-                desired
+                desired,
             )
-            
+
             existing = set(self._sessions.keys())
 
             # Cancel any pending grace teardowns for sessions we still want.
@@ -256,13 +278,13 @@ class TranslationRouter:
                     )
                     voice_echo = _resolve_voice_echo(participant.attributes)
 
-                session = GeminiSession(
+                session = EburonSession(
                     room=self._room,
                     speaker_identity=speaker_identity,
                     speaker_track=track,
                     track_source=source_str,
                     target_lang=target_lang,
-                    gemini_api_key=self._gemini_api_key,
+                    eburon_api_key=self._eburon_api_key,
                     glossary=glossary,
                     content_type=content_type,
                     available_voices=AVAILABLE_VOICES,
@@ -364,25 +386,34 @@ class TranslationRouter:
         except asyncio.CancelledError:
             return
 
-        # If, after the grace window, the session is still undesired, kill it.
-        if key in self._sessions and key not in self._compute_desired_sessions():
-            session = self._sessions.pop(key)
-            await session.aclose()
+        # Acquire the lock before checking demand so we don't snapshot
+        # _speaker_tracks while a concurrent track_subscribed/unsubscribed
+        # handler or _reconcile is mutating it.
+        async with self._reconcile_lock:
+            # If, after the grace window, the session is still undesired, kill it.
+            if key in self._sessions and key not in self._compute_desired_sessions():
+                session = self._sessions.pop(key)
+                await session.aclose()
         self._grace_tasks.pop(key, None)
 
-    def _on_participant_left(self, identity: str) -> None:
-        """Speaker fully left: immediate teardown of all their sessions."""
-        self._speaker_tracks.pop(identity, None)
-        for key in list(self._sessions.keys()):
-            if key[0] == identity:
-                session = self._sessions.pop(key)
-                # Cancel any pending grace teardown so we don't double-close.
-                pending = self._grace_tasks.pop(key, None)
-                if pending:
-                    pending.cancel()
-                task = asyncio.create_task(session.aclose())
-                self._detached_tasks.add(task)
-                task.add_done_callback(self._detached_tasks.discard)
+    async def _on_participant_left(self, identity: str) -> None:
+        """Speaker fully left: immediate teardown of all their sessions.
+
+        Acquires the reconcile lock to avoid mutating _sessions while a
+        concurrent _reconcile iterates or operates on it.
+        """
+        async with self._reconcile_lock:
+            self._speaker_tracks.pop(identity, None)
+            for key in list(self._sessions.keys()):
+                if key[0] == identity:
+                    session = self._sessions.pop(key)
+                    # Cancel any pending grace teardown so we don't double-close.
+                    pending = self._grace_tasks.pop(key, None)
+                    if pending:
+                        pending.cancel()
+                    task = asyncio.create_task(session.aclose())
+                    self._detached_tasks.add(task)
+                    task.add_done_callback(self._detached_tasks.discard)
 
     async def _handle_retranslation(self, data: rtc.DataPacket) -> None:
         try:
@@ -414,7 +445,10 @@ class TranslationRouter:
     async def _retranslate_text(
         self, text: str, target_lang: str, adjustment: str
     ) -> str:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={self._gemini_api_key}"
+        url = (
+            f"https://generativelanguage.googleapis.com/v1beta/models/"
+            f"{EBURON_RETRANSLATION_MODEL}:generateContent?key={self._eburon_api_key}"
+        )
 
         prompt = (
             f"You are a professional real-time translator. "
@@ -426,22 +460,30 @@ class TranslationRouter:
 
         payload = {"contents": [{"parts": [{"text": prompt}]}]}
 
+        # 10s timeout — a hung Gemini REST call should not hold the agent
+        # coroutine indefinitely.
+        timeout = aiohttp.ClientTimeout(total=10)
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, json=payload) as resp:
-                    if resp.status == 200:
-                        result = await resp.json()
-                        return result["candidates"][0]["content"]["parts"][0][
-                            "text"
-                        ].strip()
-                    else:
-                        body = await resp.text()
-                        logger.error(
-                            "Gemini API error during retranslation status=%d body=%s",
-                            resp.status,
-                            body,
-                        )
-                        return ""
+            async with (
+                aiohttp.ClientSession(timeout=timeout) as session,
+                session.post(url, json=payload) as resp,
+            ):
+                if resp.status == 200:
+                    result = await resp.json()
+                    return result["candidates"][0]["content"]["parts"][0][
+                        "text"
+                    ].strip()
+                else:
+                    body = await resp.text()
+                    logger.error(
+                        "AI service error during retranslation status=%d body=%s",
+                        resp.status,
+                        body,
+                    )
+                    return ""
+        except asyncio.TimeoutError:
+            logger.warning("Retranslation timed out for target_lang=%s", target_lang)
+            return ""
         except Exception as e:
-            logger.error("Failed to call Gemini API for retranslation: %s", e)
+            logger.error("Failed to call AI service for retranslation: %s", e)
             return ""

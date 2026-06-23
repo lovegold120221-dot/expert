@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { InviteIcon } from "./icons";
 
 function MailIcon() {
   return (
@@ -44,7 +43,8 @@ export default function ShareSidebar({ onClose }: ShareSidebarProps) {
   const [url, setUrl] = useState("");
 
   useEffect(() => {
-    setUrl(window.location.href);
+    const timer = setTimeout(() => setUrl(window.location.href), 0);
+    return () => clearTimeout(timer);
   }, []);
 
   const copyMeetingLink = async () => {

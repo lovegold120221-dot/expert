@@ -1,6 +1,6 @@
 # Orbit Meeting — Project Context & Instructions
 
-Orbit Meeting is a real-time AI voice translation platform for video meetings. It enables participants to speak in their native language and hear others translated into their preferred language on-demand using Gemini Live.
+Orbit Meeting is a real-time AI voice translation platform for video meetings. It enables participants to speak in their native language and hear others translated into their preferred language on-demand using Eburon AI.
 
 ## Project Architecture
 
@@ -13,7 +13,7 @@ The project is a monorepo consisting of:
 
 ### Technology Stack
 - **Web**: Next.js 16, React 19, `@livekit/components-react`, `@supabase/ssr`.
-- **Agent**: `livekit-agents` 1.5, Gemini Live API (raw WebSocket v1beta `BidiGenerateContent`).
+- **Agent**: `livekit-agents` 1.5, Eburon AI API (raw WebSocket v1beta `BidiGenerateContent`).
 - **Persistence**: Supabase (Auth, Profiles, Settings).
 - **Package Managers**: `pnpm` (Node), `uv` (Python).
 

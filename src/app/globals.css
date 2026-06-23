@@ -2887,6 +2887,57 @@ body {
   transform: scale(1.2);
 }
 
+/* ── Reaction Toasts ── */
+
+.reaction-toast-container {
+  position: absolute;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: center;
+  gap: 8px;
+  z-index: 50;
+  pointer-events: none;
+}
+
+.reaction-toast {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px 8px 12px;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  animation: reaction-toast-in 0.3s ease;
+  pointer-events: auto;
+}
+
+.reaction-toast-emoji {
+  font-size: 22px;
+  line-height: 1;
+}
+
+.reaction-toast-name {
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+@keyframes reaction-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
 .room-shell .ctrl {
   border: none;
   border-radius: 6px;
@@ -10138,6 +10189,28 @@ html[data-theme="light"] .share-icon-outlook:hover {
 }
 
 /* ——— History Sidebar Styles ——— */
+.history-sidebar-header {
+  align-items: flex-start;
+}
+
+.history-sidebar-header-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.history-sidebar-room-name {
+  font-size: 10px;
+  color: var(--fg-secondary);
+}
+
+.history-sidebar-room-id {
+  font-size: 10px;
+  color: var(--fg-ghost);
+  word-break: break-word;
+}
+
 .history-sidebar-body {
   padding: 12px;
   display: flex;
@@ -10256,6 +10329,17 @@ html[data-theme="light"] .share-icon-outlook:hover {
   text-align: right;
 }
 
+.history-item-tag {
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--fg-secondary);
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
 .history-item-texts {
   font-size: 11.5px;
   line-height: 1.45;
@@ -10270,6 +10354,14 @@ html[data-theme="light"] .share-icon-outlook:hover {
 
 .history-item-translated {
   color: var(--accent);
+}
+
+.history-sidebar-item--chat .history-item-source {
+  color: var(--fg-secondary);
+}
+
+.history-item-attachment {
+  color: var(--fg-tertiary);
 }
 
 /* ——————————————————————————————————————
@@ -10289,7 +10381,8 @@ html[data-theme="light"] .share-icon-outlook:hover {
   position: relative;
   z-index: 0;
   min-height: 100vh;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
   color: var(--landing-text);
   background:
     radial-gradient(circle at 50% -20%, rgba(163, 163, 158, 0.15) 0%, transparent 42%),
@@ -10905,6 +10998,128 @@ html[data-theme="light"] .share-icon-outlook:hover {
   opacity: 0.84;
 }
 
+/* ── Video Tutorial ── */
+
+.landing-video-tutorial {
+  width: min(100%, 1280px);
+  margin: 0 auto;
+  padding: 72px 24px 48px;
+}
+
+.landing-video-thumb {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border: 1px solid var(--landing-border);
+  border-radius: 16px;
+  overflow: hidden;
+  cursor: pointer;
+  background: none;
+  padding: 0;
+  transition: border-color 0.2s ease;
+}
+
+.landing-video-thumb:hover {
+  border-color: rgba(163, 163, 158, 0.45);
+}
+
+.landing-video-thumb-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.landing-video-play-btn {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.48);
+  transition: background 0.2s ease;
+}
+
+.landing-video-play-btn svg {
+  width: 72px;
+  height: 72px;
+  color: #ffffff;
+  filter: drop-shadow(0 4px 20px rgba(0, 0, 0, 0.5));
+  transition: transform 0.2s ease;
+}
+
+.landing-video-thumb:hover .landing-video-play-btn {
+  background: rgba(0, 0, 0, 0.38);
+}
+
+.landing-video-thumb:hover .landing-video-play-btn svg {
+  transform: scale(1.08);
+}
+
+/* Modal overlay */
+
+.landing-video-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: stretch;
+  background: #000;
+  animation: landing-video-fade-in 0.2s ease;
+}
+
+@keyframes landing-video-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.landing-video-modal {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.landing-video-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 10;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #ffffff;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.landing-video-close svg {
+  width: 20px;
+  height: 20px;
+}
+
+.landing-video-close:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.landing-video-player {
+  width: 100%;
+  flex: 1;
+  border: none;
+  background: #fff;
+}
+
 .landing-bottom-cta {
   padding: 96px 24px;
   text-align: center;
@@ -10945,10 +11160,6 @@ html[data-theme="light"] .share-icon-outlook:hover {
 .landing-footer p {
   margin: 0;
   text-align: center;
-}
-
-.landing-footer a[href="https://eburon.ai"] {
-  color: #ffffff;
 }
 
 @keyframes landingPulse {
@@ -11124,6 +11335,15 @@ html[data-theme="light"] .share-icon-outlook:hover {
 
   .landing-gallery-item--side {
     display: none;
+  }
+
+  .landing-video-tutorial {
+    padding: 48px 18px 32px;
+  }
+
+  .landing-video-play-btn svg {
+    width: 56px;
+    height: 56px;
   }
 
   .landing-bottom-cta {

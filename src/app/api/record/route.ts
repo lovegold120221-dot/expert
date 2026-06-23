@@ -1,12 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
-import { EgressClient, EncodedFileOutput, EncodedFileType, AccessToken } from "livekit-server-sdk";
+import { EgressClient, AccessToken } from "livekit-server-sdk";
+import { isRoomHost, rateLimit, rateLimitedResponse } from "@/lib/api-utils";
 
 export async function POST(req: NextRequest) {
+  if (!rateLimit(req)) return rateLimitedResponse();
+
   try {
-    const { action, roomName } = await req.json();
+    const { action, roomName, requesterIdentity } = await req.json();
 
     if (!roomName) {
       return NextResponse.json({ error: "Missing roomName parameter" }, { status: 400 });
+    }
+
+    // Recording is host-only.
+    if (!requesterIdentity || !(await isRoomHost(roomName, requesterIdentity))) {
+      return NextResponse.json(
+        { error: "Only the host can perform this action" },
+        { status: 403 },
+      );
     }
 
     const apiKey = process.env.LIVEKIT_API_KEY;
@@ -14,7 +25,7 @@ export async function POST(req: NextRequest) {
     const serverUrl = process.env.LIVEKIT_URL;
 
     if (!apiKey || !apiSecret || !serverUrl) {
-      return NextResponse.json({ error: "LiveKit credentials not configured" }, { status: 500 });
+      return NextResponse.json({ error: "Meeting service credentials not configured" }, { status: 500 });
     }
 
     const egressClient = new EgressClient(serverUrl, apiKey, apiSecret);
@@ -48,8 +59,8 @@ export async function POST(req: NextRequest) {
       });
 
       if (!res.ok) {
-        const errBody = await res.json().catch(() => ({}));
-        throw new Error(errBody.msg || `Failed to start egress (${res.status})`);
+        // Don't leak Twirp internals; surface a generic message.
+        throw new Error(`Failed to start egress (${res.status})`);
       }
 
       const egressData = await res.json();
@@ -69,10 +80,10 @@ export async function POST(req: NextRequest) {
     } else {
       return NextResponse.json({ error: "Invalid action parameter" }, { status: 400 });
     }
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Recording API Error:", error);
     return NextResponse.json(
-      { error: error.message || "Failed to process recording request. Ensure Egress is configured." },
+      { error: "Failed to process recording request. Ensure recording service is configured." },
       { status: 500 }
     );
   }

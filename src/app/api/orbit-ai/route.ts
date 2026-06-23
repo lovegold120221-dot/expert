@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
+import { rateLimit, rateLimitedResponse } from "@/lib/api-utils";
+import { EBURON_CHAT_MODEL } from "@/lib/config";
 
-const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL || "https://allison-unbagged-candida.ngrok-free.dev";
+const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL || "http://localhost:11434";
 const OLLAMA_MODEL = process.env.ORBIT_AI_MODEL || "orbit-ai";
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+const EBURON_API_KEY = process.env.EBURON_AI_API_KEY || process.env.GEMINI_API_KEY;
 
 export const runtime = "nodejs";
 
@@ -14,7 +16,7 @@ const TOOLS = [
     function: {
       name: "translate_text",
       description:
-        "Translate text from one language to another using Gemini AI. Use this when the user asks for translation help, or when you encounter text in a language the user may not understand.",
+        "Translate text from one language to another using Eburon AI. Use this when the user asks for translation help, or when you encounter text in a language the user may not understand.",
       parameters: {
         type: "object",
         properties: {
@@ -60,8 +62,8 @@ const TOOLS = [
 // ── Tool executors ────────────────────────────────────────────────────────
 
 async function executeTranslate(text: string, targetLang: string, sourceLang = "auto") {
-  if (!GEMINI_API_KEY) {
-    return { error: "Translation not available - GEMINI_API_KEY not configured" };
+  if (!EBURON_API_KEY) {
+    return { error: "Translation not available — AI service key not configured" };
   }
 
   try {
@@ -70,7 +72,7 @@ async function executeTranslate(text: string, targetLang: string, sourceLang = "
 Text: ${text}`;
 
     const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/${EBURON_CHAT_MODEL}:generateContent?key=${EBURON_API_KEY}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -175,14 +177,92 @@ async function executeWebSearch(query: string) {
   }
 }
 
+// ── Off-topic guard ───────────────────────────────────────────────────────
+
+const FORBIDDEN_KEYWORDS = [
+  "what model", "what llm", "what ai", "which model", "which llm", "which ai",
+  "who made you", "who created you", "who built you",
+  "what are you built", "what technology", "what infrastructure",
+  "how are you built", "how does orbit meeting work internally",
+  "gemini", "livekit", "openai", "gpt", "ollama", "deepseek", "qwen",
+  "open source", "proprietary", "third party",
+];
+
+const FEATURE_KEYWORDS = [
+  "translate", "translation", "caption", "language", "screen share", "screen sharing",
+  "breakout", "record", "recording", "chat", "attachment", "file",
+  "moderat", "mute", "remove participant", "background", "blur",
+  "studio", "mirror", "setting", "preference", "glossary",
+  "desktop", "pwa", "android", "download",
+  "speed mimicry", "speaker label", "hand raise", "react",
+  "history", "troubleshoot", "not working", "issue", "problem",
+  "orbit meeting", "how do i", "how to", "help",
+];
+
+function isFeatureQuestion(text: string): boolean {
+  const lower = text.toLowerCase();
+
+  // If it explicitly asks about architecture, model, or tech stack, block it
+  for (const kw of FORBIDDEN_KEYWORDS) {
+    if (lower.includes(kw)) return false;
+  }
+
+  // If it contains at least one feature keyword, allow it
+  for (const kw of FEATURE_KEYWORDS) {
+    if (lower.includes(kw)) return true;
+  }
+
+  // Short follow-ups like "yes", "ok", "tell me more" pass through
+  if (lower.length < 20) return true;
+
+  // Default: block off-topic queries
+  return false;
+}
+
+const OFF_TOPIC_RESPONSE =
+  "I'm Orbit AI from Eburon AI, and I only assist with Orbit Meeting features. Can I help you with something specific about the app? For example, I can help with translation, screen sharing, breakout rooms, recording, chat, settings, and more.";
+
+const TECH_STACK_RESPONSE =
+  "I am Orbit AI, powered by Eburon AI's proprietary technology. I'm here to help you use Orbit Meeting features. What would you like to know about the app?";
+
 // ── Main handler ──────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
+  if (!rateLimit(req)) return rateLimitedResponse();
   try {
     const { message, history, lang } = await req.json();
 
     if (!message || typeof message !== "string" || message.trim().length === 0) {
       return NextResponse.json({ error: "Message is required" }, { status: 400 });
+    }
+
+    // ── Guard: off-topic or tech-stack questions ──
+    if (!isFeatureQuestion(message)) {
+      const lowerMsg = message.toLowerCase();
+      const askingAboutModel = FORBIDDEN_KEYWORDS.some(
+        (kw) => lowerMsg.includes(kw) && !lowerMsg.includes("how do i"),
+      );
+      const reply = askingAboutModel ? TECH_STACK_RESPONSE : OFF_TOPIC_RESPONSE;
+
+      const accept = req.headers.get("accept") || "";
+      if (accept.includes("text/event-stream")) {
+        const encoder = new TextEncoder();
+        const stream = new ReadableStream({
+          start(controller) {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ content: reply })}\n\n`));
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true })}\n\n`));
+            controller.close();
+          },
+        });
+        return new Response(stream, {
+          headers: {
+            "Content-Type": "text/event-stream",
+            "Cache-Control": "no-cache",
+            Connection: "keep-alive",
+          },
+        });
+      }
+      return NextResponse.json({ message: reply, done: true });
     }
 
     const ollamaMessages: { role: string; content: string | null; tool_calls?: unknown[] }[] = [];
@@ -195,11 +275,12 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // Conversation history
+    // Conversation history — bound to last 20 turns to protect Ollama context.
     if (Array.isArray(history)) {
-      for (const msg of history) {
-        if (msg.role && msg.content) {
-          ollamaMessages.push({ role: msg.role, content: msg.content });
+      const bounded = history.slice(-20);
+      for (const msg of bounded) {
+        if (msg.role && msg.content && typeof msg.content === "string") {
+          ollamaMessages.push({ role: msg.role, content: msg.content.slice(0, 8000) });
         }
       }
     }
@@ -222,7 +303,7 @@ export async function POST(req: NextRequest) {
     if (!firstRes.ok) {
       const errText = await firstRes.text();
       return NextResponse.json(
-        { error: `Ollama error: ${firstRes.status} ${errText.slice(0, 300)}` },
+        { error: `AI service error: ${firstRes.status} ${errText.slice(0, 300)}` },
         { status: 502 },
       );
     }

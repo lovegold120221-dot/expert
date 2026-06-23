@@ -36,9 +36,9 @@ export function isSegmenterReady() {
 // Local WASM files (copied to public/mediapipe/wasm/ at build time)
 const WASM_BASE = "/mediapipe/wasm/";
 
-// Selfie segmenter model — general purpose (works for any posture)
-const MODEL_URL =
-  "https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/latest/selfie_segmenter.tflite";
+// Selfie segmenter model — self-hosted to avoid leaking third-party infra
+// URLs in the browser's Network tab. The model file is served from /public.
+const MODEL_URL = "/mediapipe/models/selfie_segmenter.tflite";
 
 export async function initSegmenter(): Promise<void> {
   if (segmenter) return;

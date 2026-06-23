@@ -1,8 +1,8 @@
 /**
  * POST /api/translate-voice
  *
- * Uses the Gemini REST API to transcribe+translate an audio clip in one call.
- * Accepts base64-encoded 16 kHz mono 16-bit PCM audio (captured via
+ * Uses the Eburon AI REST API to transcribe+translate an audio clip in one
+ * call. Accepts base64-encoded 16 kHz mono 16-bit PCM audio (captured via
  * MediaRecorder on the client).
  *
  * Body:
@@ -16,9 +16,9 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { EBURON_VOICE_MODEL } from "@/lib/config";
 
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const GEMINI_MODEL = "gemini-2.5-flash-lite";
+const EBURON_API_KEY = process.env.EBURON_AI_API_KEY || process.env.GEMINI_API_KEY;
 
 interface TranslateVoiceBody {
   audio?: string;
@@ -28,9 +28,9 @@ interface TranslateVoiceBody {
 }
 
 export async function POST(req: NextRequest) {
-  if (!GEMINI_API_KEY) {
+  if (!EBURON_API_KEY) {
     return NextResponse.json(
-      { error: "GEMINI_API_KEY not configured on server" },
+      { error: "AI service key not configured on server" },
       { status: 500 },
     );
   }
@@ -64,7 +64,7 @@ export async function POST(req: NextRequest) {
 
   const mime = mimeType || "audio/pcm;rate=16000";
 
-  // ── Call Gemini REST API with inline audio ────────────────────────
+  // ── Call Eburon AI REST API with inline audio ────────────────────
 
   const prompt = `You are a professional real-time translator.
 
@@ -81,7 +81,7 @@ Transcription:
 <translation>
 `;
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${EBURON_VOICE_MODEL}:generateContent?key=${EBURON_API_KEY}`;
 
   try {
     const response = await fetch(url, {

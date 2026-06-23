@@ -1,12 +1,14 @@
 """Unit tests for the TranslationRouter's pure demand-computation logic.
 
-These do not exercise LiveKit connectivity or Gemini sessions; they verify that
+These do not exercise LiveKit connectivity or AI sessions; they verify that
 the router computes the correct (speaker, target_lang) set given fake room
 state.
 """
 
 from __future__ import annotations
 
+import asyncio
+import inspect
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -64,7 +66,7 @@ _AUDIO_KIND = rtc.TrackKind.KIND_AUDIO
 
 def _router_with(participants):
     room = _fake_room(participants)
-    router = TranslationRouter(room=room, gemini_api_key="test-key")
+    router = TranslationRouter(room=room, eburon_api_key="test-key")
     # Skip room.on() wiring; emulate the "tracks already subscribed" backfill.
     for p in participants:
         for pub in p.track_publications.values():
@@ -233,13 +235,13 @@ def test_screen_share_audio_with_mic_mixed():
 def test_router_resolves_voice_echo_from_participant_attribute():
     """_resolve_voice_echo normalizes the orbit_voice_echo attribute to one of
     the three allowed values. Unknown values fall back to the default (clone)."""
-    from router import _resolve_voice_echo
     from config import (
         ORBIT_VOICE_ECHO_ASSIGNED,
         ORBIT_VOICE_ECHO_CLONE,
         ORBIT_VOICE_ECHO_DEFAULT,
         ORBIT_VOICE_ECHO_OFF,
     )
+    from router import _resolve_voice_echo
 
     # Missing attribute → default (clone)
     assert _resolve_voice_echo(None) == ORBIT_VOICE_ECHO_DEFAULT
@@ -247,7 +249,10 @@ def test_router_resolves_voice_echo_from_participant_attribute():
 
     # Explicit values round-trip
     assert _resolve_voice_echo({"orbit_voice_echo": "clone"}) == ORBIT_VOICE_ECHO_CLONE
-    assert _resolve_voice_echo({"orbit_voice_echo": "assigned"}) == ORBIT_VOICE_ECHO_ASSIGNED
+    assert (
+        _resolve_voice_echo({"orbit_voice_echo": "assigned"})
+        == ORBIT_VOICE_ECHO_ASSIGNED
+    )
     assert _resolve_voice_echo({"orbit_voice_echo": "off"}) == ORBIT_VOICE_ECHO_OFF
 
     # Unknown value falls back to default
@@ -257,9 +262,10 @@ def test_router_resolves_voice_echo_from_participant_attribute():
 
 def test_router_propagates_voice_echo_into_session_constructor(monkeypatch):
     """When the router starts a session, it must pass the participant's
-    voice_echo attribute into GeminiSession so the prompt matches the intent.
+    voice_echo attribute into EburonSession so the prompt matches the intent.
     """
     from config import ORBIT_VOICE_ECHO_ASSIGNED
+
     captured = {}
 
     class FakeSession:
@@ -269,7 +275,7 @@ def test_router_propagates_voice_echo_into_session_constructor(monkeypatch):
         async def start(self):
             return None
 
-    monkeypatch.setattr("router.GeminiSession", FakeSession)
+    monkeypatch.setattr("router.EburonSession", FakeSession)
 
     # Set up a single-user room so a session is desired
     p1 = _fake_participant("p1", "en")
@@ -278,7 +284,134 @@ def test_router_propagates_voice_echo_into_session_constructor(monkeypatch):
 
     # Drive a single reconcile
     import asyncio
+
     asyncio.run(router._reconcile())
 
-    assert captured, "GeminiSession was not constructed"
+    assert captured, "EburonSession was not constructed"
     assert captured.get("voice_echo") == ORBIT_VOICE_ECHO_ASSIGNED
+
+
+# --- Race-free demand reconciliation tests ----------------------------------
+
+
+def test_on_participant_left_is_async_and_acquires_lock():
+    """_on_participant_left must be a coroutine so it can acquire the
+    reconcile lock — preventing concurrent _sessions mutation."""
+
+    assert inspect.iscoroutinefunction(TranslationRouter._on_participant_left)
+
+
+def test_on_participant_left_removes_sessions(monkeypatch):
+    """When a participant leaves, all their sessions are torn down."""
+    import asyncio
+
+    closed_sessions = []
+
+    class FakeSession:
+        def __init__(self, **kwargs):
+            pass
+
+        async def start(self):
+            pass
+
+        async def aclose(self):
+            closed_sessions.append(True)
+
+    monkeypatch.setattr("router.EburonSession", FakeSession)
+
+    p1 = _fake_participant("p1", "en")
+    router = _router_with([p1])
+    asyncio.run(router._reconcile())
+    assert ("p1", "pub-sid", "en") in router._sessions
+
+    # Simulate p1 leaving
+    asyncio.run(router._on_participant_left("p1"))
+    assert ("p1", "pub-sid", "en") not in router._sessions
+    assert len(closed_sessions) == 1
+
+
+def test_grace_teardown_acquires_lock(monkeypatch):
+    """_grace_teardown must acquire the reconcile lock before computing
+    desired sessions, to avoid a stale snapshot race."""
+
+    # The body of _grace_teardown should contain "self._reconcile_lock"
+    source = inspect.getsource(TranslationRouter._grace_teardown)
+    assert "_reconcile_lock" in source
+
+
+def test_schedule_reconcile_cancels_inflight_task():
+    """_schedule_reconcile must cancel any in-flight reconcile task so only
+    one runs at a time, preventing stale-snapshot thrash."""
+
+    async def run():
+        p1 = _fake_participant("p1", "en")
+        router = _router_with([p1])
+
+        # Create a dummy in-flight task
+        async def dummy():
+            await asyncio.sleep(100)
+
+        router._reconcile_task = asyncio.create_task(dummy())
+        router._schedule_reconcile()
+
+        # The dummy task should have been cancelled
+        assert router._reconcile_task is None or router._reconcile_task.done()
+        # Clean up the timer handle
+        if router._reconcile_handle:
+            router._reconcile_handle.cancel()
+
+    asyncio.run(run())
+
+
+# --- Retranslation handler tests --------------------------------------------
+
+
+def test_retranslation_handler_ignores_malformed_data():
+    """_handle_retranslation must not crash on missing fields or bad JSON."""
+    import asyncio
+
+    p1 = _fake_participant("p1", "en")
+    router = _router_with([p1])
+
+    # Malformed data packet — no valid JSON
+    bad_data = MagicMock()
+    bad_data.data.decode.return_value = "not json"
+    # Should not raise
+    asyncio.run(router._handle_retranslation(bad_data))
+
+    # Missing required fields
+    bad_data.data.decode.return_value = '{"key": "k1"}'
+    asyncio.run(router._handle_retranslation(bad_data))
+
+
+def test_retranslate_text_returns_empty_on_timeout(monkeypatch):
+    """_retranslate_text returns "" on timeout, not an exception."""
+    import asyncio
+
+    p1 = _fake_participant("p1", "en")
+    router = _router_with([p1])
+
+    # Mock aiohttp to raise TimeoutError
+    class FakeTimeoutResp:
+        async def __aenter__(self):
+            raise asyncio.TimeoutError()
+
+        async def __aexit__(self, *args):
+            pass
+
+    class FakeSession:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+        def post(self, *args, **kwargs):
+            return FakeTimeoutResp()
+
+    monkeypatch.setattr("router.aiohttp.ClientSession", FakeSession)
+    result = asyncio.run(router._retranslate_text("hello", "es", "formal"))
+    assert result == ""

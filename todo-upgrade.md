@@ -10,9 +10,9 @@ These 5 proposals focus on enhancing translation accuracy, reliability, and low-
 
 ### 1. Dynamic Dialect & Glossary Steering (Gemini Configuration injection)
 
-* **The Idea**: Inject user-defined dictionaries and glossary items dynamically into the Gemini Live WebSocket connection payload.
+* **The Idea**: Inject user-defined dictionaries and glossary items dynamically into the Eburon AI WebSocket connection payload.
 * **Why it matters**: In specialized meetings (e.g., medical, developer, legal), standard translation models struggle with jargon, acronyms, or brand names.
-* **Implementation**: Add a "Glossary" tab in settings. Before connecting to the Gemini Live WebSocket, fetch the session glossary and inject it as part of the `systemInstruction` or within the `generationConfig` translation context, forcing the model to respect custom translations.
+* **Implementation**: Add a "Glossary" tab in settings. Before connecting to the Eburon AI WebSocket, fetch the session glossary and inject it as part of the `systemInstruction` or within the `generationConfig` translation context, forcing the model to respect custom translations.
 
 ### 2. Context-Aware Translation Memory
 
@@ -25,7 +25,7 @@ These 5 proposals focus on enhancing translation accuracy, reliability, and low-
 * **The Idea**: Establish a hybrid translation router that automatically degrades gracefully when cloud services or API keys hit limits.
 * **Why it matters**: Real-time voice calls cannot tolerate a translation model going offline.
 * **Implementation**:
-  * **Primary**: Gemini Live Bidirectional WebSocket.
+  * **Primary**: Eburon AI Bidirectional WebSocket.
   * **Secondary Cloud Fallback**: Standard Gemini 1.5 Flash REST API (text-to-text) combined with Web Speech Synthesis.
   * **Tertiary Local Fallback**: Run a compact, ONNX-runtime translation model (like MarianMT or a pruned Llama model) locally inside the Electron wrapper or Capacitor app for offline/emergency translation.
 

@@ -1,6 +1,6 @@
-"""One bidirectional Gemini Live session bridging a speaker to a target language.
+"""One bidirectional Eburon AI session bridging a speaker to a target language.
 
-We talk to Gemini Live via a raw WebSocket against the v1beta BidiGenerateContent
+We talk to Eburon AI via a raw WebSocket against the v1beta BidiGenerateContent
 endpoint rather than via google-genai's `client.aio.live.connect()`. The v1beta
 API expects `translationConfig` nested under `generationConfig` (renamed from the
 EAP-era `streamingTranslationConfig` at the public launch). Bypassing the SDK lets
@@ -21,15 +21,16 @@ import re
 import websockets
 from livekit import rtc
 
-from audio import iter_pcm_for_gemini, make_audio_source, push_pcm_to_source
+from audio import iter_pcm_for_eburon, make_audio_source, push_pcm_to_source
 from config import (
     AVAILABLE_VOICES,
     CONTENT_TYPE_CINEMATIC_FAITHFUL,
     CONTENT_TYPE_MOVIE,
-    GEMINI_INPUT_SAMPLE_RATE,
-    GEMINI_MAX_FAILURES_BEFORE_LONG_BACKOFF,
-    GEMINI_MODEL,
-    GEMINI_RECONNECT_BACKOFF_SEC,
+    EBURON_CIRCUIT_BREAKER_THRESHOLD,
+    EBURON_INPUT_SAMPLE_RATE,
+    EBURON_MAX_FAILURES_BEFORE_LONG_BACKOFF,
+    EBURON_MODEL,
+    EBURON_RECONNECT_BACKOFF_SEC,
     INPUT_RMS_LOG_EVERY_FRAMES,
     INPUT_RMS_QUIET_FRAMES,
     INPUT_RMS_QUIET_THRESHOLD,
@@ -40,23 +41,20 @@ from config import (
     ORBIT_VOICE_ECHO_ASSIGNED,
     ORBIT_VOICE_ECHO_CLONE,
     ORBIT_VOICE_ECHO_DEFAULT,
-    ORBIT_VOICE_ECHO_OFF,
     PARTICIPANT_LANG_ATTR,
-    WS_SEND_QUEUE_DROP_BATCH,
-    WS_SEND_QUEUE_HIGH_WATER,
 )
 from lexicon import get_lexicon_instructions
 
 logger = logging.getLogger("translator.session")
 
 
-GEMINI_WS_URL = (
+EBURON_WS_URL = (
     "wss://generativelanguage.googleapis.com/ws/"
     "google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent"
 )
 
 # --- Structured transcription markers ---
-# Gemini wraps each transcription segment in these markers carrying JSON metadata.
+# Eburon AI wraps each transcription segment in these markers carrying JSON metadata.
 SEGMENT_RE = re.compile(r"\[SEGMENT\](.*?)\[/SEGMENT\]", re.DOTALL)
 OUTPUT_RE = re.compile(r"\[OUTPUT\](.*?)\[/OUTPUT\]", re.DOTALL)
 
@@ -77,18 +75,22 @@ def _normalize_voice_echo(value: str | None) -> str:
         return ORBIT_VOICE_ECHO_DEFAULT
     if value in ORBIT_VOICE_ECHO_ALLOWED:
         return value
-    logger.warning("unknown voice-echo value %r, falling back to %s", value, ORBIT_VOICE_ECHO_DEFAULT)
+    logger.warning(
+        "unknown voice-echo value %r, falling back to %s",
+        value,
+        ORBIT_VOICE_ECHO_DEFAULT,
+    )
     return ORBIT_VOICE_ECHO_DEFAULT
 
 
-class GeminiSession:
+class EburonSession:
     """Bridges a single speaker's mic into a single target-language translation track.
 
     Lifecycle:
       - `start()` publishes the translator track and starts the WS-pump loop.
       - `aclose()` tears everything down. Idempotent.
       - On WebSocket errors, reconnects with exponential backoff. After
-        `GEMINI_MAX_FAILURES_BEFORE_LONG_BACKOFF` consecutive failures it logs
+        `EBURON_MAX_FAILURES_BEFORE_LONG_BACKOFF` consecutive failures it logs
         at ERROR level and keeps retrying with the longest backoff.
 
     Voice-echo strategy:
@@ -108,9 +110,9 @@ class GeminiSession:
 
     @staticmethod
     def _base_lang_code(code: str) -> str:
-        """Strip the region suffix from a locale code for Gemini's API.
+        """Strip the region suffix from a locale code for the AI service's API.
 
-        Gemini's ``translationConfig.targetLanguageCode`` expects ISO 639-1 base
+        The ``translationConfig.targetLanguageCode`` expects ISO 639-1 base
         codes (e.g. ``nl``, ``fr``, ``pt``).  Regional variants like ``nl-BE`` or
         ``pt-BR`` are sent to the LLM via a dialect instruction in the system
         prompt instead.
@@ -134,8 +136,8 @@ class GeminiSession:
         """Analyze recent source segments and return dynamic speed-matching instructions.
 
         Uses speech_style, emotion, tone, and pause markers from rolling segment
-        history to infer the speaker's current pacing characteristics and instructs
-        Gemini to match that pace in its translated output. Returns a static fallback
+        history         to infer the speaker's current pacing characteristics and instructs
+        the AI to match that pace in its translated output. Returns a static fallback
         when no segment data is available.
         """
         pace_mapping = {
@@ -177,9 +179,7 @@ class GeminiSession:
             "sad": (
                 "Deliver SLOWLY and softly — sadness requires a slower, weighted pace."
             ),
-            "surprised": (
-                "React with a sudden, sharp delivery — match the surprise."
-            ),
+            "surprised": ("React with a sudden, sharp delivery — match the surprise."),
             "fearful": (
                 "Speak with tension and urgency — the fear should come through in speed."
             ),
@@ -198,7 +198,7 @@ class GeminiSession:
         # Gather recent source segments (last 10 for broader pattern detection)
         recent_source = [
             seg
-            for seg in reversed(self._segment_history[-10 :])
+            for seg in reversed(self._segment_history[-10:])
             if seg.get("kind") == "source"
         ]
 
@@ -215,7 +215,9 @@ class GeminiSession:
         dominant_style = max(style_counts, key=style_counts.get) if style_counts else ""
 
         # Analyze emotional patterns across recent source segments
-        emotions: list[str] = [seg.get("emotion", "") for seg in recent_source if seg.get("emotion")]
+        emotions: list[str] = [
+            seg.get("emotion", "") for seg in recent_source if seg.get("emotion")
+        ]
 
         lines: list[str] = ["\nSPEECH PACE MATCHING FOR THIS SESSION:"]
 
@@ -239,7 +241,9 @@ class GeminiSession:
             )
 
         # Add overlap/urgency signal
-        overlaps = sum(1 for seg in recent_source if seg.get("overlap_status") == "overlapping")
+        overlaps = sum(
+            1 for seg in recent_source if seg.get("overlap_status") == "overlapping"
+        )
         if overlaps > 0:
             lines.append(
                 "  Multiple speakers are talking simultaneously — the speaker is trying to "
@@ -249,6 +253,7 @@ class GeminiSession:
         # Add emotional intensity as a pacing signal
         if emotions:
             from collections import Counter
+
             dominant_emotion = Counter(emotions).most_common(1)[0][0]
             if dominant_emotion in emotion_pace:
                 lines.append(f"  Detected emotion: {dominant_emotion}.")
@@ -271,7 +276,7 @@ class GeminiSession:
         speaker_track: rtc.RemoteAudioTrack,
         track_source: str,
         target_lang: str,
-        gemini_api_key: str,
+        eburon_api_key: str,
         glossary: list[dict[str, str]] | None = None,
         content_type: str = "normal",
         available_voices: list[tuple[str, str]] | None = None,
@@ -282,7 +287,7 @@ class GeminiSession:
         self._speaker_track = speaker_track
         self._track_source = track_source
         self._target_lang = target_lang
-        self._gemini_api_key = gemini_api_key
+        self._eburon_api_key = eburon_api_key
         self._glossary = glossary or []
         self._content_type = content_type
         self._available_voices = available_voices or AVAILABLE_VOICES[:4]
@@ -303,6 +308,7 @@ class GeminiSession:
         self._local_track: rtc.LocalAudioTrack | None = None
         self._track_sid: str | None = None
         self._consecutive_failures = 0
+        self._total_failures = 0
         self._tasks: list[asyncio.Task] = []
         self._closed = asyncio.Event()
         # Conversation ID for correlating transcription/translation segments.
@@ -361,6 +367,16 @@ class GeminiSession:
             asyncio.create_task(self._run(), name=f"session/{track_name}")
         )
 
+    async def _update_agent_state(self, state: str) -> None:
+        """Best-effort update of the `lk.agent.state` attribute so the
+        frontend can show accurate translator status (listening /
+        reconnecting / error). Failures are logged at debug — the agent
+        state is informational, not critical."""
+        try:
+            await self._room.local_participant.set_attributes({"lk.agent.state": state})
+        except Exception as exc:
+            logger.debug("set agent state=%s failed: %s", state, exc)
+
     async def aclose(self) -> None:
         if self._closed.is_set():
             return
@@ -404,11 +420,15 @@ class GeminiSession:
             the input pump resumes seamlessly.
           - The `setup_complete` event is a *per-connect* flag, not a
             session-wide one. Each `_connect_and_pump` call creates its own
-            event so the input pump only starts streaming audio once Gemini
+            event so the input pump only starts streaming audio once the AI
             acknowledges the new connection.
-          - If the speaker track is gone, the input iterator's `iter_pcm_for_gemini`
+          - If the speaker track is gone, the input iterator's `iter_pcm_for_eburon`
             yields no more frames, the input pump exits cleanly, and we stop
             the outer loop so the router can tear us down.
+          - Circuit breaker: after EBURON_CIRCUIT_BREAKER_THRESHOLD total
+            failures (without a single setupComplete), we stop retrying and
+            publish an error state. This prevents zombie retry loops when
+            the API key is bad or quota is exhausted.
         """
         while not self._closed.is_set():
             try:
@@ -420,15 +440,44 @@ class GeminiSession:
                 raise
             except Exception as exc:
                 self._consecutive_failures += 1
+                self._total_failures += 1
                 idx = min(
                     self._consecutive_failures - 1,
-                    len(GEMINI_RECONNECT_BACKOFF_SEC) - 1,
+                    len(EBURON_RECONNECT_BACKOFF_SEC) - 1,
                 )
-                delay = GEMINI_RECONNECT_BACKOFF_SEC[idx]
+                delay = EBURON_RECONNECT_BACKOFF_SEC[idx]
                 delay += random.uniform(0, delay * 0.2)  # jitter
+
+                # Circuit breaker: too many failures — give up.
+                if self._total_failures >= EBURON_CIRCUIT_BREAKER_THRESHOLD:
+                    logger.error(
+                        "Eburon session %s -> %s hit circuit breaker after "
+                        "%d total failures; giving up",
+                        self._speaker_identity,
+                        self._target_lang,
+                        self._total_failures,
+                    )
+                    await self._update_agent_state("error")
+                    # Publish an error data message so the frontend can show
+                    # a user-visible "translation unavailable" notice.
+                    with contextlib.suppress(Exception):
+                        await self._room.local_participant.publish_data(
+                            payload=json.dumps(
+                                {
+                                    "type": "translation_error",
+                                    "source_identity": self._speaker_identity,
+                                    "target_lang": self._target_lang,
+                                    "reason": "circuit_breaker",
+                                }
+                            ).encode("utf-8"),
+                            topic="lk.translation",
+                            reliable=True,
+                        )
+                    return
+
                 if (
                     self._consecutive_failures
-                    >= GEMINI_MAX_FAILURES_BEFORE_LONG_BACKOFF
+                    >= EBURON_MAX_FAILURES_BEFORE_LONG_BACKOFF
                 ):
                     logger.error(
                         "Eburon session %s -> %s failed %d times; will keep retrying with long backoff",
@@ -436,6 +485,9 @@ class GeminiSession:
                         self._target_lang,
                         self._consecutive_failures,
                     )
+                    # Surface reconnecting state so the frontend knows
+                    # translation is temporarily unavailable.
+                    await self._update_agent_state("reconnecting")
                 logger.warning(
                     "Eburon session error (%s -> %s) attempt #%d: %s; backing off %.2fs",
                     self._speaker_identity,
@@ -454,8 +506,8 @@ class GeminiSession:
                     pass
 
     async def _connect_and_pump(self) -> None:
-        """One Gemini WebSocket connect + bidirectional pump."""
-        url = f"{GEMINI_WS_URL}?key={self._gemini_api_key}"
+        """One Eburon AI WebSocket connect + bidirectional pump."""
+        url = f"{EBURON_WS_URL}?key={self._eburon_api_key}"
         # Max payload size: enough to cover ~1s of 48 kHz 16-bit PCM in base64.
         async with websockets.connect(
             url, max_size=2**22, ping_interval=20, ping_timeout=20
@@ -511,7 +563,7 @@ class GeminiSession:
 
         return {
             "setup": {
-                "model": f"models/{GEMINI_MODEL}",
+                "model": f"models/{EBURON_MODEL}",
                 "systemInstruction": {"parts": [{"text": system_instruction_text}]},
                 "outputAudioTranscription": {},
                 "inputAudioTranscription": {},
@@ -819,56 +871,33 @@ class GeminiSession:
         ws: websockets.WebSocketClientProtocol,
         setup_complete: asyncio.Event,
     ) -> None:
-        """Read PCM from the speaker's track and forward to Gemini as base64.
+        """Read PCM from the speaker's track and forward to the AI as base64.
 
         Robustness:
           - Wait for `setup_complete` before streaming audio. If the speaker
             track is gone, the iterator yields nothing and we exit cleanly.
-          - Backpressure: track in-flight sends. If Gemini is slow and the
-            in-flight count crosses WS_SEND_QUEUE_HIGH_WATER, drop the oldest
-            frames in batches until we're back under the high-water mark.
-            Dropping is preferable to buffering, which would cause the user
-            to hear stale translations.
+          - Backpressure: the real backpressure path is in `audio.py`'s
+            `MultiplexedAudioStream`, which drops frames when a subscriber's
+            `asyncio.Queue(maxsize=100)` is full (logged as `dropped=N` on
+            close). The `_ws_inflight` counter here is a diagnostic only —
+            since `ws.send` is awaited inline, it never exceeds 1.
           - RMS logging: track the input amplitude. If it stays near-silent
             for INPUT_RMS_QUIET_FRAMES, log a one-shot WARN so an operator
             can investigate the speaker's mic.
         """
-        # Don't start streaming audio until Gemini acknowledges setup; otherwise
+        # Don't start streaming audio until the AI acknowledges setup; otherwise
         # the model has nothing telling it what to do with the bytes.
         await setup_complete.wait()
         sent = 0
-        mime = f"audio/pcm;rate={GEMINI_INPUT_SAMPLE_RATE}"
+        mime = f"audio/pcm;rate={EBURON_INPUT_SAMPLE_RATE}"
         try:
-            async for pcm in iter_pcm_for_gemini(self._speaker_track):
+            async for pcm in iter_pcm_for_eburon(self._speaker_track):
                 if self._closed.is_set():
                     return
 
-                # Update RMS stats before any dropping so diagnostics stay
-                # accurate.
+                # Update RMS stats so diagnostics stay accurate.
                 self._observe_rms(pcm)
                 self._frames_sent += 1
-
-                # Backpressure: if we're far ahead of Gemini, drop the oldest
-                # pending frames in batches. We do this by reading the queue
-                # depth estimate from self._ws_inflight; the actual asyncio
-                # queue isn't directly accessible, so we treat in-flight as a
-                # proxy updated when sends complete.
-                if self._ws_inflight >= WS_SEND_QUEUE_HIGH_WATER:
-                    self._ws_dropped += WS_SEND_QUEUE_DROP_BATCH
-                    logger.warning(
-                        "Eburon input backpressure: in_flight=%d, "
-                        "dropping %d oldest frames (cumulative_dropped=%d)",
-                        self._ws_inflight,
-                        WS_SEND_QUEUE_DROP_BATCH,
-                        self._ws_dropped,
-                    )
-                    # Decrement in-flight by the batch size as a best-effort
-                    # ack. The actual ws.send will still be queued and will
-                    # eventually catch up.
-                    self._ws_inflight = max(
-                        0, self._ws_inflight - WS_SEND_QUEUE_DROP_BATCH
-                    )
-                    continue
 
                 b64 = base64.b64encode(pcm).decode("ascii")
                 msg = {
@@ -941,10 +970,7 @@ class GeminiSession:
             self._quiet_streak = 0
             self._quiet_warned = False
 
-        if (
-            not self._quiet_warned
-            and self._quiet_streak >= INPUT_RMS_QUIET_FRAMES
-        ):
+        if not self._quiet_warned and self._quiet_streak >= INPUT_RMS_QUIET_FRAMES:
             logger.warning(
                 "Eburon quiet-speaker detection: %s has been below RMS "
                 "%.1f for %d frames. Mic gain / device routing may need "
@@ -971,7 +997,7 @@ class GeminiSession:
         ws: websockets.WebSocketClientProtocol,
         setup_complete: asyncio.Event,
     ) -> None:
-        """Receive Gemini translated audio + transcription, route into the room."""
+        """Receive translated audio + transcription from the AI, route into the room."""
         audio_frames = 0
         text_chunks = 0
         _first_content_seen = False
@@ -984,7 +1010,7 @@ class GeminiSession:
                 except json.JSONDecodeError:
                     logger.debug("ignoring non-JSON WS frame")
                     continue
-                
+
                 if msg.get("setupComplete") is not None:
                     logger.info(
                         "Eburon setup complete: %s -> %s",
@@ -992,9 +1018,11 @@ class GeminiSession:
                         self._target_lang,
                     )
                     self._consecutive_failures = 0
+                    # Restore the listening state — the session recovered.
+                    await self._update_agent_state("listening")
                     setup_complete.set()
                     continue
-                
+
                 sc = msg.get("serverContent")
                 if not sc:
                     # Log unrecognized message types once per session for debugging
@@ -1006,7 +1034,7 @@ class GeminiSession:
                             list(msg.keys())[:5],
                         )
                     continue
-                
+
                 if not _first_content_seen:
                     _first_content_seen = True
                     logger.info(
@@ -1015,7 +1043,7 @@ class GeminiSession:
                         self._target_lang,
                         list(sc.keys()),
                     )
-                
+
                 # Translated audio frames.
                 model_turn = sc.get("modelTurn")
                 if model_turn is not None:
@@ -1033,7 +1061,7 @@ class GeminiSession:
                                     self._speaker_identity,
                                     self._target_lang,
                                 )
-                
+
                 # --- OUTPUT TRANSCRIPTION (translated text) ---
                 ot = sc.get("outputTranscription")
                 if not ot and model_turn is not None:
@@ -1050,7 +1078,7 @@ class GeminiSession:
                     # For cinematic faithful mode, parse cast blocks
                     if self._content_type == CONTENT_TYPE_CINEMATIC_FAITHFUL:
                         self._parse_cinematic_output(ot_text)
-                
+
                 # --- SOURCE TRANSCRIPTION (what the speaker said) ---
                 it = sc.get("inputTranscription")
                 if it and it.get("text"):
@@ -1070,7 +1098,7 @@ class GeminiSession:
                             self._speaker_identity,
                             self._target_lang,
                         )
-                
+
                 if sc.get("turnComplete"):
                     await self._publish_transcript("", final=True)
                     # Publish accumulated structured segments as JSON
@@ -1079,8 +1107,11 @@ class GeminiSession:
                     if self._content_type == CONTENT_TYPE_CINEMATIC_FAITHFUL:
                         await self._publish_cinematic_json()
         finally:
-            logger.info("TOMBSTONE: _pump_output terminated for %s -> %s", self._speaker_identity, self._target_lang)
-
+            logger.info(
+                "TOMBSTONE: _pump_output terminated for %s -> %s",
+                self._speaker_identity,
+                self._target_lang,
+            )
 
     def _append_history(self, kind: str, segment: dict) -> None:
         """Add a structured segment to rolling memory, capping at limits."""
@@ -1157,7 +1188,7 @@ class GeminiSession:
             cleaned = text.strip()
             if not cleaned:
                 return []
-            return [GeminiSession._make_fallback_output_segment(cleaned)]
+            return [EburonSession._make_fallback_output_segment(cleaned)]
 
         segments: list[dict] = []
         for raw in matches:
@@ -1247,7 +1278,7 @@ class GeminiSession:
     def _parse_cinematic_output(self, text: str) -> None:
         """Extract cast blocks and accumulate segments from cinematic faithful output.
 
-        Gemini outputs text like:
+        The AI outputs text like:
           <cast>{"speaker":"A","name":"Aragorn",...}</cast>
           [A] I will not [pause] I cannot do this. [breath]
 

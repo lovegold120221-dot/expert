@@ -14,7 +14,6 @@ const config: CapacitorConfig = {
     cleartext: isLocal,
     allowNavigation: [
       "*.livekit.cloud",
-      "*.googleapis.com",
       "*.supabase.co",
     ],
   },

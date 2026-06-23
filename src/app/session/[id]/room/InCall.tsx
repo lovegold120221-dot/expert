@@ -26,7 +26,8 @@ import OrbitAISidebar from "./OrbitAISidebar";
 import ShareSidebar from "./ShareSidebar";
 import HistorySidebar from "./HistorySidebar";
 import GalleryView from "./GalleryView";
-import { SpeakerIcon, SpeakerOffIcon, ChevronDownIcon, LinkIcon, ShieldCheckIcon, FilmIcon, MagicWandIcon } from "./icons";
+import { SpeakerIcon, SpeakerOffIcon, ChevronDownIcon, LinkIcon, ShieldCheckIcon, FilmIcon } from "./icons";
+import VirtualBackgroundProcessor from "./VirtualBackgroundProcessor";
 
 export default function InCall({
   initialLang,
@@ -49,7 +50,18 @@ export default function InCall({
     profile?.content_type || "normal"
   );
   const router = useRouter();
-  const isHost = typeof window !== 'undefined' && window.sessionStorage.getItem("orbitHostRoom") === room.name;
+
+  // Hydration-safe host check: read sessionStorage in useEffect, not in the
+  // render body, to prevent SSR/CSR mismatch and host-flag thrash.
+  const [isHost, setIsHost] = useState(false);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional hydration pattern
+    setIsHost(window.sessionStorage.getItem("orbitHostRoom") === room.name);
+  }, [room.name]);
+
+  // Reconnect state — shows a banner when the WebRTC signal connection drops.
+  const [isReconnecting, setIsReconnecting] = useState(false);
 
   useDataChannel("moderate", (msg) => {
     try {
@@ -63,17 +75,19 @@ export default function InCall({
   });
 
   const [reactions, setReactions] = useState<Map<string, { emoji: string; ts: number }>>(new Map());
+  const [reactionToasts, setReactionToasts] = useState<Array<{ id: number; emoji: string; from: string }>>([]);
+  let toastIdCounter = 0;
 
   useDataChannel("react", (msg) => {
     try {
       const payload = JSON.parse(new TextDecoder().decode(msg.payload));
       if (payload.emoji && payload.fromId) {
+        // Update sidebar badge
         setReactions((prev) => {
           const next = new Map(prev);
           next.set(payload.fromId, { emoji: payload.emoji, ts: Date.now() });
           return next;
         });
-        // Auto-clear after 4 seconds
         setTimeout(() => {
           setReactions((prev) => {
             const next = new Map(prev);
@@ -81,6 +95,12 @@ export default function InCall({
             return next;
           });
         }, 4000);
+        // Show floating toast for all participants
+        const id = ++toastIdCounter;
+        setReactionToasts((prev) => [...prev, { id, emoji: payload.emoji, from: payload.from || payload.fromId }]);
+        setTimeout(() => {
+          setReactionToasts((prev) => prev.filter((t) => t.id !== id));
+        }, 2500);
       }
     } catch {}
   });
@@ -157,14 +177,35 @@ export default function InCall({
   // Sync local contentType state from the user profile when it loads/changes
   useEffect(() => {
     if (profile?.content_type) {
-      setContentType(profile.content_type);
+      const ct = profile.content_type;
+      const timer = setTimeout(() => setContentType(ct), 0);
+      return () => clearTimeout(timer);
     }
   }, [profile?.content_type]);
 
-  useTranslationRouting(lang, localParticipant.identity, true, true, true, translatorMuted, speakerMuted);
+  const applyTranslationRouting = useTranslationRouting(lang, localParticipant.identity, true, true, true, translatorMuted, speakerMuted);
 
-
-
+  // ── Reconnect handling: show a banner while reconnecting and re-run
+  // translation routing after a successful reconnect to reconcile track
+  // subscriptions that may have been lost server-side.
+  useEffect(() => {
+    if (!room) return;
+    const onReconnecting = () => setIsReconnecting(true);
+    const onReconnected = () => {
+      setIsReconnecting(false);
+      // Re-run translation routing now that tracks are re-published.
+      applyTranslationRouting.current?.();
+    };
+    const onDisconnected = () => setIsReconnecting(false);
+    room.on(RoomEvent.Reconnecting, onReconnecting);
+    room.on(RoomEvent.Reconnected, onReconnected);
+    room.on(RoomEvent.Disconnected, onDisconnected);
+    return () => {
+      room.off(RoomEvent.Reconnecting, onReconnecting);
+      room.off(RoomEvent.Reconnected, onReconnected);
+      room.off(RoomEvent.Disconnected, onDisconnected);
+    };
+  }, [room, applyTranslationRouting]);
 
   const humanRemotes = useMemo(
     () => remotes.filter((p) => p.kind !== ParticipantKind.AGENT),
@@ -201,6 +242,28 @@ export default function InCall({
   return (
     <div className={shellClassName} data-sidebar={activeSidebar ?? "none"}>
       <div className="room">
+        {/* Reconnect banner — shown when the WebRTC signal connection drops */}
+        {isReconnecting && (
+          <div
+            role="status"
+            aria-live="polite"
+            style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              right: 0,
+              zIndex: 1000,
+              background: "rgba(245, 158, 11, 0.95)",
+              color: "#fff",
+              textAlign: "center",
+              padding: "6px 12px",
+              fontSize: "13px",
+              fontWeight: 500,
+            }}
+          >
+            Reconnecting to meeting…
+          </div>
+        )}
         {/* Top chrome */}
         <header className="orbit-header">
           {/* Desktop Single Line Header */}
@@ -272,7 +335,7 @@ export default function InCall({
               <span>Orbit</span>
               <ChevronDownIcon />
             </button>
-            <button className="orbit-mobile-leave" onClick={async () => { await room.disconnect(); onLeave(); }}>
+            <button className="orbit-mobile-leave" onClick={async () => { try { await room.disconnect(); } finally { onLeave(); } }}>
               Leave
             </button>
           </div>
@@ -289,7 +352,20 @@ export default function InCall({
               <GalleryView remotes={humanRemotes} myLang={lang} isHost={isHost} roomName={room.name} />
             )}
           </div>
-          {/* Right Sidebar Panel */}
+
+          {/* Floating reaction toasts */}
+          {reactionToasts.length > 0 && (
+            <div className="reaction-toast-container">
+              {reactionToasts.map((t) => (
+                <div key={t.id} className="reaction-toast">
+                  <span className="reaction-toast-emoji">{t.emoji}</span>
+                  <span className="reaction-toast-name">{t.from}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Sidebar Panels */}
           {activeSidebar === "participants" && (
             <ParticipantsPanel 
               localParticipant={localParticipant}
@@ -353,7 +429,7 @@ export default function InCall({
           }}
         />
       </div>
-
+      <VirtualBackgroundProcessor />
     </div>
   );
 }

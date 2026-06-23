@@ -4,13 +4,13 @@
 
 # Translator agent (Python)
 
-Per-room LiveKit Agents worker for [Live Translate](../README.md). One process per room, one Gemini Live session per `(speaker → target_lang)` pair, audio + caption text-streams published back into the room.
+Per-room LiveKit Agents worker for [Live Translate](../README.md). One process per room, one Eburon AI session per `(speaker → target_lang)` pair, audio + caption text-streams published back into the room.
 
 For the project overview and quick start (which runs this worker alongside the frontend), see the [root README](../README.md). This file covers running, testing, and deploying the agent on its own.
 
 ## What it does
 
-Listens to every participant's mic track and watches each participant's `lang` attribute. For each distinct `(speaker, target_lang)` pair where `source_lang != target_lang`, the [`TranslationRouter`](src/router.py) opens a [Gemini Live](https://ai.google.dev/gemini-api/docs/live) session ([`GeminiSession`](src/session.py)) and publishes:
+Listens to every participant's mic track and watches each participant's `lang` attribute. For each distinct `(speaker, target_lang)` pair where `source_lang != target_lang`, the [`TranslationRouter`](src/router.py) opens an [Eburon AI](https://eburon.ai) session ([`GeminiSession`](src/session.py)) and publishes:
 
 - A translated audio track named `tx:<speaker>:<target_lang>`, which the frontend subscribes to via track-name routing.
 - A `lk.translation` text-stream carrying live captions, also tagged with the target language.

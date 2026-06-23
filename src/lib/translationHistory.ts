@@ -131,4 +131,26 @@ export async function downloadHistoryFromSupabase(
   return [];
 }
 
+/**
+ * Try to download history from Supabase for a given room name.
+ * Used by the room sidebar to show every participant's translations.
+ */
+export async function downloadRoomHistoryFromSupabase(
+  roomName: string,
+): Promise<TranslationHistoryEntry[]> {
+  try {
+    const { data } = await supabase
+      .from("translation_history")
+      .select("*")
+      .eq("room_name", roomName)
+      .order("created_at", { ascending: false });
+    if (data && Array.isArray(data)) {
+      return data as TranslationHistoryEntry[];
+    }
+  } catch {
+    // Table may not exist
+  }
+  return [];
+}
+
 export { formatTimestamp, formatRoomName };

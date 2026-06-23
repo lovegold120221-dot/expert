@@ -2,6 +2,7 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import Link from "next/link";
+import VideoTutorial from "@/components/VideoTutorial";
 
 export const metadata: Metadata = {
   title: "Orbit Meeting | Real-Time AI Voice Translation",
@@ -46,16 +47,6 @@ const featureCards: Array<{
     imageAlt: "Multiple Devices",
     wide: true,
   },
-  {
-    title: "Screen Share Audio",
-    body: "Sharing a video? The agent automatically ducks the original audio and translates the content.",
-    icon: <ScreenIcon />,
-  },
-  {
-    title: "Zero Translation Cost",
-    body: "Smart routing ensures same-language pairs makes it very efficient.",
-    icon: <ShieldIcon />,
-  },
 ];
 
 const galleryImages = [
@@ -91,6 +82,7 @@ export default function LandingPage() {
         <div className="landing-nav-links">
           <a href="#features">Platform</a>
           <a href="#architecture">Architecture</a>
+          <a href="#tutorial">Tutorial</a>
           <a href="https://eburon.ai" target="_blank" rel="noreferrer">
             Eburon AI
           </a>
@@ -229,6 +221,8 @@ export default function LandingPage() {
         ))}
       </section>
 
+      <VideoTutorial />
+
       <section className="landing-bottom-cta">
         <h2>Ready to break the language barrier?</h2>
         <p>
@@ -300,25 +294,6 @@ function ParticipantsIcon() {
       <path d="M12 4.354a4 4 0 1 1 0 5.292" />
       <path d="M15 21H3v-1a6 6 0 0 1 12 0v1Zm0 0h6v-1a6 6 0 0 0-9-5.197" />
       <path d="M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z" />
-    </svg>
-  );
-}
-
-function ScreenIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <path d="M9.75 17 9 20l-1 1h8l-1-1-.75-3" />
-      <path d="M3 13h18" />
-      <path d="M5 17h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2Z" />
-    </svg>
-  );
-}
-
-function ShieldIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <path d="m9 12 2 2 4-4" />
-      <path d="M20.618 5.984A11.955 11.955 0 0 1 12 2.944a11.955 11.955 0 0 1-8.618 3.04A12.02 12.02 0 0 0 3 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016Z" />
     </svg>
   );
 }

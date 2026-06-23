@@ -1,7 +1,7 @@
-"""Unit tests for GeminiSession._build_setup_payload across voice-echo modes.
+"""Unit tests for EburonSession._build_setup_payload across voice-echo modes.
 
-Pure-logic tests: no LiveKit connectivity, no Gemini WebSocket. We construct a
-bare GeminiSession (skipping __init__) and inspect the payload it would send.
+Pure-logic tests: no LiveKit connectivity, no WebSocket API calls. We construct a
+bare EburonSession (skipping __init__) and inspect the payload it would send.
 
 These exist so the prompt engineering for "echo the original voice" is locked
 in: any change that weakens the voice-preservation behavior will fail these
@@ -26,7 +26,7 @@ from config import (
     ORBIT_VOICE_ECHO_CLONE,
     ORBIT_VOICE_ECHO_OFF,
 )
-from session import GeminiSession
+from session import EburonSession
 
 
 def _bare_session(
@@ -39,11 +39,11 @@ def _bare_session(
     segment_history=None,
     conversation_id: str = "abc123",
 ):
-    """Build a GeminiSession without calling __init__.
+    """Build an EburonSession without calling __init__.
 
     The setup-payload builder only reads these attributes.
     """
-    s = GeminiSession.__new__(GeminiSession)
+    s = EburonSession.__new__(EburonSession)
     s._available_voices = available_voices or [
         ("Kore", "Firm assertive female"),
         ("Orus", "Firm authoritative male"),
@@ -94,9 +94,7 @@ def test_clone_mode_prompt_mentions_voice_preservation():
         "timbre",
         "speaker identity",
     ):
-        assert phrase.lower() in text.lower(), (
-            f"clone prompt missing: {phrase!r}"
-        )
+        assert phrase.lower() in text.lower(), f"clone prompt missing: {phrase!r}"
 
 
 def test_clone_mode_does_not_assign_from_voice_pool():
@@ -172,9 +170,7 @@ def test_off_mode_keeps_echo_target_language_enabled():
 def test_movie_and_cinematic_voice_echo_clone_prompts(content_type, marker):
     """Even in movie/cinematic mode, voice_echo=clone must keep the
     voice-preservation directive front and center."""
-    s = _bare_session(
-        voice_echo=ORBIT_VOICE_ECHO_CLONE, content_type=content_type
-    )
+    s = _bare_session(voice_echo=ORBIT_VOICE_ECHO_CLONE, content_type=content_type)
     text = _instruction_text(_setup_payload(s))
     assert marker in text
     assert "preserve" in text.lower()

@@ -2,7 +2,7 @@
  * Orbit Meeting — Electron Main Process
  *
  * Starts the Next.js production server (standalone build) and wraps it in a
- * native window. Runs Ollama availability check on first launch.
+ * native window. Runs local AI runtime availability check on first launch.
  */
 const { app, BrowserWindow, dialog, ipcMain, shell, desktopCapturer } = require("electron");
 const path = require("path");
@@ -14,10 +14,10 @@ const isDev = !app.isPackaged;
 const DEV_SERVER_PORT = process.env.ELECTRON_DEV_PORT || 3000;
 const PORT = isDev ? DEV_SERVER_PORT : (process.env.ELECTRON_PORT || 3456);
 
-// ── Ollama check (first launch) ──────────────────────────────────────
-const OLLAMA_CHECKED_KEY = "orbit.ollama-checked";
+// ── Local AI runtime check (first launch) ───────────────────────────
+const AI_CHECKED_KEY = "orbit.ai-runtime-checked";
 
-function detectOllama() {
+function detectLocalRuntime() {
   try {
     const cp = require("child_process");
     const result = cp.spawnSync("ollama", ["--version"], {
@@ -31,7 +31,7 @@ function detectOllama() {
   }
 }
 
-function installOllama() {
+function installLocalRuntime() {
   const platform = process.platform;
   if (platform === "darwin") {
     // macOS — prefer Homebrew (most devs have it), fallback to direct download
@@ -74,38 +74,38 @@ function installOllama() {
   return false;
 }
 
-function showOllamaRecovery(win) {
+function showRuntimeRecovery(win) {
   dialog.showMessageBox(win, {
     type: "info",
-    title: "Ollama Not Found",
-    message: "Orbit Meeting requires Ollama for local AI features.",
+    title: "Eburon AI Local Runtime Not Found",
+    message: "Orbit Meeting requires the Eburon AI local runtime for AI assistant features.",
     detail:
-      "Ollama lets you run language models locally on your machine.\n\n" +
+      "The Eburon AI local runtime lets you run language models on your machine.\n\n" +
       "• macOS: brew install ollama\n" +
       "  or visit https://ollama.com\n" +
       "• Windows: Download from https://ollama.com/download\n" +
       "• Linux: curl -fsSL https://ollama.com/install.sh | sh\n\n" +
       "After installing, restart Orbit Meeting.",
-    buttons: ["Install Automatically", "Visit Ollama Website", "Skip"],
+    buttons: ["Install Automatically", "Visit Download Page", "Skip"],
     defaultId: 0,
     cancelId: 2,
   }).then(({ response }) => {
     if (response === 0) {
       try {
-        const success = installOllama();
+        const success = installLocalRuntime();
         if (success) {
           dialog.showMessageBox(win, {
             type: "info",
-            title: "Ollama Installed",
-            message: "Ollama has been installed successfully!",
-            detail: "Please restart Orbit Meeting to use local AI features.",
+            title: "Runtime Installed",
+            message: "The Eburon AI local runtime has been installed successfully!",
+            detail: "Please restart Orbit Meeting to use AI assistant features.",
           });
         }
       } catch (e) {
         dialog.showMessageBox(win, {
           type: "error",
           title: "Installation Failed",
-          message: "Could not install Ollama automatically.",
+          message: "Could not install the Eburon AI local runtime automatically.",
           detail:
             "Please install it manually:\n" +
             "  macOS: brew install ollama\n" +
@@ -245,15 +245,15 @@ ipcMain.handle("app:isPackaged", () => app.isPackaged);
 
 app.whenReady().then(async () => {
   // First-launch Ollama check
-  if (!isDev && !detectOllama()) {
+  if (!isDev && !detectLocalRuntime()) {
     // We'll show the dialog after the window is ready, but store the intent
-    globalThis._pendingOllamaCheck = true;
+    globalThis._pendingRuntimeCheck = true;
   }
 
   await createWindow();
 
-  if (globalThis._pendingOllamaCheck && mainWindow) {
-    showOllamaRecovery(mainWindow);
+  if (globalThis._pendingRuntimeCheck && mainWindow) {
+    showRuntimeRecovery(mainWindow);
     globalThis._pendingOllamaCheck = false;
   }
 

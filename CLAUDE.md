@@ -10,13 +10,61 @@ Two independent projects with zero shared code:
 
 Other roots:
 - `components/` — **Legacy `.js` files.** Do not touch. Pre-existing lint warnings are expected.
-- `electron/` — Electron desktop wrapper around the Next.js standalone server
+- `electron/` — Electron desktop wrapper (`main.js` + `preload.js`) around the Next.js standalone server
 - `android/` — Capacitor Android project loading the production web app
-- `supabase/migrations/` — SQL migrations (profiles, meetings, recordings, chat_messages)
+- `supabase/migrations/` — 12 SQL migrations (001_schema → final.sql) covering profiles, meetings, recordings, chat_messages, translation_history, content_types, glossary, studio_effect
 - `scripts/setup.sh` — Idempotent: seeds `.env` files + installs both halves' deps
 - `public/` — PWA manifest, service worker, icons
 - `.github/workflows/deploy.yml` — Vercel auto-deploy on push/PR to main
 - `.github/workflows/signed-release.yml` — Signed macOS/Windows/Linux/Android release builds
+
+## Frontend architecture (src/)
+
+### App pages (Next.js App Router)
+
+| Route | Purpose |
+|-------|---------|
+| `/auth/*` | Supabase auth flow (sign-in, sign-up, password reset) |
+| `/dashboard` | Meeting list + create new meeting |
+| `/history` | Translation history viewer |
+| `/session/[id]/room` | Active meeting UI — the core live session page |
+
+### Session room components (`src/app/session/[id]/room/`)
+
+20+ files. Key groupings:
+
+- **Entry:** `page.tsx`, `RoomClient.tsx` (LiveKit `<Room>` wrapper)
+- **Video layouts:** `ActiveSpeaker.tsx`, `GalleryView.tsx`, `VideoGrid.tsx`
+- **Tiles:** `ParticipantTile.tsx`, `LocalTile.tsx`, `SelfView.tsx`, `ScreenShareView.tsx`
+- **Sidebars (toggleable):** `CaptionsSidebar.tsx`, `ChatSidebar.tsx`, `BreakoutSidebar.tsx`, `HistorySidebar.tsx`, `ShareSidebar.tsx`, `OrbitAISidebar.tsx`
+- **Controls:** `ControlBar.tsx`, `InCall.tsx`, `LanguagePill.tsx`, `ParticipantsPanel.tsx`
+- **Critical routing hook:** `useTranslationRouting.ts` — subscribes/unsubscribes to `tx:*` tracks per `(listener_lang, speaker_lang)` demand model
+
+### Context providers (`src/context/`)
+
+| File | Purpose |
+|------|---------|
+| `AuthContext.tsx` | Supabase auth state (anonymous + signed-in) |
+| `CallContext.tsx` | LiveKit room state, participant list, local tracks |
+| `UserContext.tsx` | User profile preferences persisted to Supabase `profiles` table |
+
+### Library utilities (`src/lib/`)
+
+| File | Purpose |
+|------|---------|
+| `config.ts` | Shared constants (sync with `translator/src/config.py`) |
+| `languages.ts` | Language list + metadata |
+| `supabase.ts`, `supabase-server.ts` | Client vs. server Supabase instances |
+| `gemini-fetch.ts` | Direct HTTP calls to Gemini Live API (fallback path) |
+| `translationHistory.ts` | Translation history CRUD operations |
+| `permissions.ts` | Meeting permission checks for host moderation |
+| `reminder.ts` | Meeting reminder scheduling logic |
+| `segmenter.ts` | Text segmentation utilities |
+
+### API routes (`src/app/api/`)
+
+Existing: `/api/token`, `/api/translate-voice`, `/api/translate-text`, `/api/breakout`, `/api/moderate`, `/api/record`.
+New: `/api/invite` (email invitations), `/api/orbit-ai/search` + `/api/orbit-ai/translate` (Orbit AI features).
 
 Related instruction files: `GEMINI.md` (project overview), `translator/AGENTS.md` (Python agent TDD guide).
 

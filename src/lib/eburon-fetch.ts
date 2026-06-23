@@ -1,7 +1,7 @@
 /**
- * Shared utility for fetching from the Gemini REST API with retry logic.
+ * Shared utility for fetching from the Eburon AI REST API with retry logic.
  *
- * Transient 5xx errors (503, 502, 504) from Gemini are retried with
+ * Transient 5xx errors (503, 502, 504) are retried with
  * exponential backoff up to `maxRetries` times. 4xx errors (bad request,
  * auth, quota) are passed through immediately since retrying won't help.
  */
@@ -10,7 +10,7 @@ const RETRYABLE_STATUSES = new Set([502, 503, 504]);
 const INITIAL_DELAY_MS = 1000;
 const MAX_RETRIES = 2;
 
-export async function fetchGeminiWithRetry(
+export async function fetchEburonWithRetry(
   url: string,
   options: RequestInit,
   maxRetries = MAX_RETRIES,

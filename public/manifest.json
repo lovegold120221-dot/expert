@@ -1,7 +1,7 @@
 {
   "name": "Orbit Meeting",
   "short_name": "Orbit",
-  "description": "Real-time meeting translation with Gemini AI — speak any language, hear in yours.",
+  "description": "Real-time meeting translation powered by Eburon AI — speak any language, hear in yours.",
   "start_url": "/",
   "id": "/",
   "display": "standalone",

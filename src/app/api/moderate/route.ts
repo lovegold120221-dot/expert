@@ -1,14 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
 import { RoomServiceClient } from "livekit-server-sdk";
+import { isRoomHost, rateLimit, rateLimitedResponse } from "@/lib/api-utils";
 
 export async function POST(req: NextRequest) {
+  if (!rateLimit(req)) return rateLimitedResponse();
+
   try {
-    const { action, roomName, identity, trackSid } = await req.json();
+    const { action, roomName, identity, trackSid, requesterIdentity } = await req.json();
 
     if (!action || !roomName || !identity) {
       return NextResponse.json(
         { error: "Missing required parameters (action, roomName, identity)" },
         { status: 400 }
+      );
+    }
+
+    // Verify the caller is the host before allowing kick/mute.
+    if (!requesterIdentity || !(await isRoomHost(roomName, requesterIdentity))) {
+      return NextResponse.json(
+        { error: "Only the host can perform this action" },
+        { status: 403 }
       );
     }
 
@@ -18,7 +29,7 @@ export async function POST(req: NextRequest) {
 
     if (!apiKey || !apiSecret || !serverUrl) {
       return NextResponse.json(
-        { error: "LiveKit credentials not configured" },
+        { error: "Meeting service credentials not configured" },
         { status: 500 }
       );
     }
@@ -43,11 +54,16 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Moderation API Error:", error);
+    // Don't leak internal LiveKit/Twirp error details to the client.
+    const status =
+      typeof error === "object" && error !== null && "status" in error
+        ? (error as { status: number }).status
+        : 500;
     return NextResponse.json(
-      { error: error.message || "Failed to process moderation request" },
-      { status: 500 }
+      { error: "Failed to process moderation request" },
+      { status: status >= 400 && status < 600 ? status : 500 }
     );
   }
 }

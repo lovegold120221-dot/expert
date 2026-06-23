@@ -4,19 +4,27 @@ import {
   RoomConfiguration,
   RoomAgentDispatch,
 } from "livekit-server-sdk";
+import {
+  DEPARTURE_TIMEOUT,
+  EMPTY_ROOM_TIMEOUT,
+  MAX_PARTICIPANTS,
+  SESSION_TTL_SECONDS,
+} from "@/lib/config";
+import { rateLimit, rateLimitedResponse } from "@/lib/api-utils";
 
-// Session caps (mirrors src/lib/config.ts on the client). Hardcoded here to
-// avoid a runtime import cycle; keep these in sync if you change them in one place.
-const SESSION_TTL_SECONDS = 4 * 60 * 60; // 4h hard cap per grill Q21
-const EMPTY_ROOM_TIMEOUT = 60; // close empty rooms after 60s
-const DEPARTURE_TIMEOUT = 30; // close after last person leaves
-const MAX_PARTICIPANTS = 40; // room cap — supports up to 40 participants
-// Must match agent_name in translator/src/agent.py. Using "gemini-translator"
-// instead of the generic "translator" to avoid colliding with stale Cloud
-// Agents that may already be registered under "translator".
-const TRANSLATOR_AGENT_NAME = "gemini-translator";
+// Must match agent_name in translator/src/agent.py. Using a branded name
+// (not "translator") so we don't collide with stale Cloud Agents registered
+// under common names — see git history for the diagnosis.
+const TRANSLATOR_AGENT_NAME = "eburon-translator";
+
+// Reject identities/room names that could break JWT subjects or LiveKit
+// routing. Allow word chars, dashes, dots, colons, and the breakout prefix.
+const IDENTITY_RE = /^[A-Za-z0-9._:-]{1,128}$/;
+const ROOM_RE = /^[A-Za-z0-9._:-]{1,128}$/;
 
 export async function GET(req: NextRequest) {
+  if (!rateLimit(req)) return rateLimitedResponse();
+
   const room = req.nextUrl.searchParams.get("room");
   const identity = req.nextUrl.searchParams.get("identity");
   const hostParam = req.nextUrl.searchParams.get("host");
@@ -31,13 +39,21 @@ export async function GET(req: NextRequest) {
     );
   }
 
+  if (!ROOM_RE.test(room) || !IDENTITY_RE.test(identity)) {
+    return NextResponse.json(
+      { error: "Invalid room or identity format" },
+      { status: 400 },
+    );
+  }
+
   const apiKey = process.env.LIVEKIT_API_KEY;
   const apiSecret = process.env.LIVEKIT_API_SECRET;
   const serverUrl = process.env.LIVEKIT_URL;
+  const publicServerUrl = process.env.LIVEKIT_PUBLIC_URL || serverUrl;
 
   if (!apiKey || !apiSecret || !serverUrl) {
     return NextResponse.json(
-      { error: "LiveKit credentials not configured" },
+      { error: "Meeting service credentials not configured" },
       { status: 500 },
     );
   }
@@ -78,5 +94,5 @@ export async function GET(req: NextRequest) {
 
   const token = await at.toJwt();
 
-  return NextResponse.json({ token, serverUrl });
+  return NextResponse.json({ token, serverUrl: publicServerUrl });
 }

@@ -110,7 +110,12 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         // Not logged in — use anonymous profile for limited functionality
         let anonId = window.localStorage.getItem("orbitUserId");
         if (!anonId) {
-          anonId = crypto.randomUUID();
+          // Guard crypto.randomUUID for older WebViews (e.g. Capacitor
+          // Android on older Android versions) where it may be undefined.
+          anonId =
+            typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+              ? crypto.randomUUID()
+              : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 14)}`;
           window.localStorage.setItem("orbitUserId", anonId);
         }
 

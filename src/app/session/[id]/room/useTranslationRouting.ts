@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useRoomContext } from "@livekit/components-react";
 import {
   ParticipantKind,
@@ -52,6 +52,10 @@ function parseTranslationTrackName(
  *     the track's target_lang matches myLang, and either:
  *       - trackSource === "screen_share_audio" AND translateScreenShare=true
  *       - trackSource === "mic" AND speaker's lang !== myLang
+ *
+ * Returns a ref to the `apply` function so callers (e.g. InCall on
+ * RoomEvent.Reconnected) can re-run reconciliation after a signal reconnect,
+ * since track subscriptions may have been lost server-side.
  */
 export function useTranslationRouting(
   myLang: string,
@@ -63,6 +67,7 @@ export function useTranslationRouting(
   speakerMuted: boolean = false,
 ) {
   const room = useRoomContext();
+  const applyRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     if (!room) return;
@@ -84,6 +89,9 @@ export function useTranslationRouting(
       }
     };
 
+    // Expose apply so InCall can re-trigger on RoomEvent.Reconnected.
+    applyRef.current = apply;
+
     apply();
 
     const handlers: Array<[Parameters<typeof room.on>[0], () => void]> = [
@@ -95,6 +103,9 @@ export function useTranslationRouting(
       [RoomEvent.TrackSubscribed, apply],
       [RoomEvent.TrackUnsubscribed, apply],
       [RoomEvent.LocalTrackPublished, apply],
+      // After a signal reconnect, track subscription state may diverge from
+      // the server's view — re-run apply to reconcile.
+      [RoomEvent.Reconnected, apply],
     ];
     for (const [event, handler] of handlers) {
       room.on(event, handler);
@@ -103,8 +114,11 @@ export function useTranslationRouting(
       for (const [event, handler] of handlers) {
         room.off(event, handler);
       }
+      applyRef.current = null;
     };
   }, [room, myLang, myIdentity, translationEnabled, muteOriginal, translateScreenShare, translatorMuted, speakerMuted]);
+
+  return applyRef;
 }
 
 function applyHumanSubscriptions(

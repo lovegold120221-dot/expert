@@ -26,12 +26,12 @@ Related instruction files: `GEMINI.md` (project overview), `translator/AGENTS.md
 
 ## Critical naming — must keep in sync
 
-The agent dispatch name `"gemini-translator"` is hardcoded in **two places**. If you rename it, change both:
+The agent dispatch name `"eburon-translator"` is hardcoded in **two places**. If you rename it, change both:
 
 | File | Location |
 |------|----------|
-| `translator/src/agent.py` | `@server.rtc_session(agent_name="gemini-translator")` |
-| `src/app/api/token/route.ts` | `const TRANSLATOR_AGENT_NAME = "gemini-translator"` |
+| `translator/src/agent.py` | `@server.rtc_session(agent_name="eburon-translator")` |
+| `src/app/api/token/route.ts` | `const TRANSLATOR_AGENT_NAME = "eburon-translator"` |
 
 A unique name (not `"translator"`) avoids collisions with stale Cloud Agents.
 
@@ -43,6 +43,7 @@ A unique name (not `"translator"`) avoids collisions with stale Cloud Agents.
 |----------|----------|-------|
 | Native sentinel | `NATIVE_LANG = "none"` | `NATIVE_LANG = "none"` |
 | Lang attribute key | `PARTICIPANT_LANG_ATTR = "lang"` | `PARTICIPANT_LANG_ATTR = "lang"` |
+| Text model | `EBURON_TEXT_MODEL = "gemini-3.5-flash"` | `EBURON_RETRANSLATION_MODEL = "gemini-3.5-flash"` |
 
 The token route (`src/app/api/token/route.ts`) hardcodes `SESSION_TTL_SECONDS`, `EMPTY_ROOM_TIMEOUT`, `DEPARTURE_TIMEOUT`, and `MAX_PARTICIPANTS` separately — keep these in sync with `src/lib/config.ts` too.
 
@@ -69,7 +70,7 @@ uv run ruff format         # Format
 | File | Variables | Used by |
 |------|-----------|---------|
 | `.env.local` | `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` | Frontend token route |
-| `translator/.env.local` | Same three + `GEMINI_API_KEY` | Python agent |
+| `translator/.env.local` | Same three + `EBURON_AI_API_KEY` (falls back to `GEMINI_API_KEY`) | Python agent |
 | `.env` (not committed) | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Settings persistence |
 
 ## Translation track routing

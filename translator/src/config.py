@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
-# --- Gemini Live ---
+# --- Eburon AI ---
 
-GEMINI_MODEL = "gemini-3.5-live-translate-preview"
+EBURON_MODEL = "gemini-3.5-live-translate-preview"
 
-# Gemini Live API audio formats.
-GEMINI_INPUT_SAMPLE_RATE = 16000  # Gemini expects 16kHz mono PCM in
-GEMINI_OUTPUT_SAMPLE_RATE = 24000  # Gemini emits 24kHz mono PCM out
+# Model used for one-shot retranslation requests (REST API, not the
+# bidirectional WS). Keep this in sync with the frontend's EBURON_TEXT_MODEL
+# in src/lib/config.ts — the config sync test checks this.
+EBURON_RETRANSLATION_MODEL = "gemini-3.5-flash"
+
+# Eburon AI API audio formats.
+EBURON_INPUT_SAMPLE_RATE = 16000  # API expects 16kHz mono PCM in
+EBURON_OUTPUT_SAMPLE_RATE = 24000  # API emits 24kHz mono PCM out
 AUDIO_CHANNELS = 1
 
 # --- LiveKit ---
@@ -91,13 +96,13 @@ INPUT_RMS_LOG_EVERY_FRAMES = 250
 
 # If the running RMS stays below this threshold for INPUT_RMS_QUIET_FRAMES
 # in a row, we log a one-shot WARN so the operator can check the speaker's
-# mic gain. Gemini Live still hears it, but downstream STT degrades.
+# mic gain. Eburon AI still hears it, but downstream STT degrades.
 INPUT_RMS_QUIET_THRESHOLD = 200.0
 INPUT_RMS_QUIET_FRAMES = 1000  # ~20s of near-silence
 
 # Backpressure guard: if the WebSocket send queue grows past this many
 # pending messages we start dropping the oldest audio frames. We only do
-# this when the consumer (Gemini) is the bottleneck - in normal operation
+# this when the AI service (consumer) is the bottleneck — in normal operation
 # the queue is 0-1 messages.
 WS_SEND_QUEUE_HIGH_WATER = 32
 WS_SEND_QUEUE_DROP_BATCH = 8
@@ -144,8 +149,21 @@ AVAILABLE_VOICES: list[tuple[str, str]] = [
     ("Sulafat", "Warm — rich, comforting tone, female"),
 ]
 
-# --- Gemini connection ---
+# --- Eburon AI connection ---
 
-# Exponential backoff schedule for reconnecting a failed Gemini session.
-GEMINI_RECONNECT_BACKOFF_SEC = [0.5, 1.0, 2.0, 4.0, 8.0, 16.0, 30.0]
-GEMINI_MAX_FAILURES_BEFORE_LONG_BACKOFF = 5
+# Exponential backoff schedule for reconnecting a failed AI session.
+EBURON_RECONNECT_BACKOFF_SEC = [0.5, 1.0, 2.0, 4.0, 8.0, 16.0, 30.0]
+EBURON_MAX_FAILURES_BEFORE_LONG_BACKOFF = 5
+
+# Circuit breaker: after this many total failures (across all reconnect
+# attempts) without a single setupComplete, the session gives up entirely
+# instead of retrying forever. This prevents zombie retry loops when the API
+# key is bad or quota is exhausted — one per (speaker, lang) that would
+# otherwise leak connections and spam ERROR logs indefinitely.
+EBURON_CIRCUIT_BREAKER_THRESHOLD = 10
+
+# Agent state values published via the `lk.agent.state` participant attribute
+# so the frontend can show accurate translator status.
+AGENT_STATE_LISTENING = "listening"
+AGENT_STATE_RECONNECTING = "reconnecting"
+AGENT_STATE_ERROR = "error"
