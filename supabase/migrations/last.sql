@@ -1039,7 +1039,7 @@ CREATE INDEX idx_chat_messages_meeting ON public.chat_messages(meeting_id);
 
 -- ── TRANSLATION HISTORY ───────────────────────────────────────────────────
 
-CREATE TABLE public.translation_history (
+CREATE TABLE IF NOT EXISTS public.translation_history (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id TEXT NOT NULL DEFAULT '',
   room_name TEXT NOT NULL DEFAULT '',
