@@ -897,6 +897,7 @@ CREATE POLICY chat_files_delete ON storage.objects FOR DELETE USING (bucket_id =
 -- This section provides a clean-state full schema. It drops all objects and
 -- recreates them from scratch. Best for fresh database setups.
 
+DROP TABLE IF EXISTS public.translation_history CASCADE;
 DROP TABLE IF EXISTS public.chat_messages CASCADE;
 DROP TABLE IF EXISTS public.recordings CASCADE;
 DROP TABLE IF EXISTS public.meeting_participants CASCADE;
@@ -1039,7 +1040,7 @@ CREATE INDEX idx_chat_messages_meeting ON public.chat_messages(meeting_id);
 
 -- ── TRANSLATION HISTORY ───────────────────────────────────────────────────
 
-CREATE TABLE IF NOT EXISTS public.translation_history (
+CREATE TABLE public.translation_history (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id TEXT NOT NULL DEFAULT '',
   room_name TEXT NOT NULL DEFAULT '',
@@ -1052,9 +1053,9 @@ CREATE TABLE IF NOT EXISTS public.translation_history (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_translation_history_user_id ON public.translation_history (user_id);
-CREATE INDEX idx_translation_history_created_at ON public.translation_history (created_at DESC);
-CREATE INDEX idx_translation_history_room_name ON public.translation_history (room_name);
+CREATE INDEX IF NOT EXISTS idx_translation_history_user_id ON public.translation_history (user_id);
+CREATE INDEX IF NOT EXISTS idx_translation_history_created_at ON public.translation_history (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_translation_history_room_name ON public.translation_history (room_name);
 
 -- ── ROW LEVEL SECURITY ────────────────────────────────────────────────────
 
