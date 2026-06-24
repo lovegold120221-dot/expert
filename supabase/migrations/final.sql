@@ -33,6 +33,7 @@ CREATE TABLE public.profiles (
   mirror_video BOOLEAN DEFAULT true,
   camera_off_on_join BOOLEAN DEFAULT false,
   video_background TEXT DEFAULT 'none',
+  studio_effect BOOLEAN DEFAULT false,
   show_captions BOOLEAN DEFAULT true,
   mute_original_audio BOOLEAN DEFAULT true,
   translate_audio_playback BOOLEAN DEFAULT true,

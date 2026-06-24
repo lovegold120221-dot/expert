@@ -16,6 +16,8 @@ const PRESET_COLORS = [
   { id: "color-#c3aed6", label: "Lavender", value: "#c3aed6" },
 ];
 
+type CustomBg = { name: string; data: string; type?: 'image' | 'video' };
+
 const STORAGE_BGS_KEY = "orbit.customBgs";
 
 export default function CameraPreview({
@@ -37,7 +39,7 @@ export default function CameraPreview({
   const [camOn, setCamOn] = useState(false);
   const [camError, setCamError] = useState<string | null>(null);
   const [showBgPicker, setShowBgPicker] = useState(false);
-  const [customBgs, setCustomBgs] = useState<{ name: string; data: string }[]>([]);
+  const [customBgs, setCustomBgs] = useState<CustomBg[]>([]);
 
   // Load custom backgrounds from localStorage
   useEffect(() => {
@@ -81,9 +83,11 @@ export default function CameraPreview({
   }, [startCamera, stopCamera]);
 
   // Find custom bg data URL if selected
-  const selectedCustomData = background.startsWith("custom-")
-    ? customBgs.find((b) => `custom-${b.name}` === background)?.data
+  const selectedCustomBg = background.startsWith("custom-")
+    ? customBgs.find((b) => `custom-${b.name}` === background) ?? null
     : null;
+  const selectedCustomData = selectedCustomBg?.data ?? null;
+  const selectedIsVideo = selectedCustomBg?.type === "video";
 
   // Compute the container style based on background choice
   const containerStyle: React.CSSProperties = (() => {
@@ -93,7 +97,11 @@ export default function CameraPreview({
       const hex = background.replace("color-", "");
       return { background: hex };
     }
-    if (background.startsWith("custom-") && selectedCustomData) {
+    if (selectedIsVideo) {
+      // Video background — dark fallback while video loads
+      return { background: "#1a1a2e" };
+    }
+    if (selectedCustomData) {
       return {
         backgroundImage: `url(${selectedCustomData})`,
         backgroundSize: "cover",
@@ -126,19 +134,20 @@ export default function CameraPreview({
     }
   };
 
-  // Upload a custom background image
+  // Upload a custom background (image or video)
   const handleUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (!file.type.startsWith("image/")) {
-      alert("Please select an image file.");
+    const isVideo = file.type.startsWith("video/");
+    if (!file.type.startsWith("image/") && !isVideo) {
+      alert("Please select an image or video file.");
       return;
     }
     const reader = new FileReader();
     reader.onload = (ev) => {
       const dataUrl = ev.target?.result as string;
       const name = `bg-${Date.now()}`;
-      const updated = [...customBgs, { name, data: dataUrl }];
+      const updated: CustomBg[] = [...customBgs, { name, data: dataUrl, type: isVideo ? 'video' : 'image' }];
       setCustomBgs(updated);
       localStorage.setItem(STORAGE_BGS_KEY, JSON.stringify(updated));
       onBackgroundChange(`custom-${name}`);
@@ -157,17 +166,43 @@ export default function CameraPreview({
         style={containerStyle}
       >
         {camOn ? (
-          <video
-            ref={videoRef}
-            autoPlay
-            playsInline
-            muted
-            className="settings-cam-video"
-            style={{
-              transform: videoTransform,
-              filter: background === "blur" ? "blur(12px)" : undefined,
-            }}
-          />
+          <>
+            {/* Looping video background overlay */}
+            {selectedIsVideo && selectedCustomData && (
+              /* eslint-disable-next-line jsx-a11y/media-has-caption */
+              <video
+                key={selectedCustomData}
+                autoPlay
+                loop
+                muted
+                playsInline
+                className="settings-cam-video-overlay"
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  width: "100%",
+                  height: "100%",
+                  objectFit: "cover",
+                  zIndex: 0,
+                }}
+              >
+                <source src={selectedCustomData} />
+              </video>
+            )}
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted
+              className="settings-cam-video"
+              style={{
+                transform: videoTransform,
+                filter: background === "blur" ? "blur(12px)" : undefined,
+                position: "relative",
+                zIndex: 1,
+              }}
+            />
+          </>
         ) : camError ? (
           <div className="settings-cam-error">
             <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -265,7 +300,15 @@ export default function CameraPreview({
                 onClick={() => { onBackgroundChange(`custom-${bg.name}`); onDirty(); }}
               >
                 <div className="settings-bg-thumb" style={{ position: "relative" }}>
-                  <img src={bg.data} alt={bg.name} className="settings-bg-thumb-img" />
+                  {bg.type === "video" ? (
+                    <div className="settings-bg-thumb-video-indicator">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                        <polygon points="5 3 19 12 5 21 5 3" />
+                      </svg>
+                    </div>
+                  ) : (
+                    <img src={bg.data} alt={bg.name} className="settings-bg-thumb-img" />
+                  )}
                   <button
                     className="settings-bg-delete"
                     onClick={(e) => { e.stopPropagation(); deleteCustomBg(bg.name); }}
@@ -277,7 +320,10 @@ export default function CameraPreview({
                     </svg>
                   </button>
                 </div>
-                <span>{bg.name.replace("bg-", "").slice(0, 8)}</span>
+                <span>
+                  {bg.type === "video" ? "🎬 " : ""}
+                  {bg.name.replace("bg-", "").slice(0, 8)}
+                </span>
               </button>
             ))}
 
@@ -298,7 +344,7 @@ export default function CameraPreview({
             <input
               ref={fileInputRef}
               type="file"
-              accept="image/*"
+              accept="image/*,video/*"
               style={{ display: "none" }}
               onChange={handleUpload}
             />

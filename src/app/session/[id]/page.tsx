@@ -61,13 +61,15 @@ export default function PreFlightPage({
   const [videoBackground, setVideoBackground] = useState(profile?.video_background || "none");
   const [mirrorVideo, setMirrorVideo] = useState(profile?.mirror_video !== false);
   const [studioEffect, setStudioEffect] = useState(profile?.studio_effect || false);
-  const [customBgs, setCustomBgs] = useState<{ name: string; data: string }[]>([]);
+  type CustomBg = { name: string; data: string; type?: 'image' | 'video' };
+  const [customBgs, setCustomBgs] = useState<CustomBg[]>([]);
   const STORAGE_BGS_KEY = "orbit.customBgs";
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const videoBoxRef = useRef<HTMLDivElement>(null);
   const animFrameRef = useRef<number>(0);
   const tempCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const bgImageRef = useRef<HTMLImageElement | null>(null);
+  const bgVideoRef = useRef<HTMLVideoElement | null>(null);
   const prevMaskRef = useRef<Float32Array | null>(null);
   const [segmenterStatus, setSegmenterStatus] = useState("idle"); // Managed via effect
   const [modelStatus, setModelStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
@@ -113,22 +115,54 @@ export default function PreFlightPage({
     return () => clearInterval(id);
   }, [segmenterStatus]);
 
-  // Load background image into ref when it changes
+  // Helper to clean up a background video element
+  const stopBgVideo = useCallback(() => {
+    if (bgVideoRef.current) {
+      bgVideoRef.current.pause();
+      bgVideoRef.current.src = "";
+      bgVideoRef.current.load(); // release allocated media
+      bgVideoRef.current = null;
+    }
+  }, []);
+
+  // Also clean up video on unmount
+  useEffect(() => {
+    return () => stopBgVideo();
+  }, [stopBgVideo]);
+
+  // Load background image/video into ref when it changes
   useEffect(() => {
     if (videoBackground === "none" || videoBackground === "blur") {
       bgImageRef.current = null;
+      stopBgVideo();
       return;
     }
 
-    if (videoBackground.startsWith("custom-")) {
-      const entry = customBgs.find((b) => `custom-${b.name}` === videoBackground);
-      if (entry) {
-        const img = new Image();
-        img.crossOrigin = "anonymous";
-        img.src = entry.data;
-        img.onload = () => { bgImageRef.current = img; };
-      }
-    } else {
+    const entry = videoBackground.startsWith("custom-")
+      ? customBgs.find((b) => `custom-${b.name}` === videoBackground)
+      : null;
+
+    if (entry?.type === "video") {
+      // Video background — create a looping video element
+      bgImageRef.current = null;
+      stopBgVideo(); // release any previous video
+      const video = document.createElement("video");
+      video.crossOrigin = "anonymous";
+      video.loop = true;
+      video.muted = true;
+      video.playsInline = true;
+      video.autoplay = true;
+      video.src = entry.data;
+      video.play().catch(() => {});
+      bgVideoRef.current = video;
+    } else if (entry) {
+      bgVideoRef.current = null;
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.src = entry.data;
+      img.onload = () => { bgImageRef.current = img; };
+    } else if (!videoBackground.startsWith("custom-")) {
+      bgVideoRef.current = null;
       const img = new Image();
       img.crossOrigin = "anonymous";
       img.src = `/${videoBackground}`;
@@ -254,7 +288,9 @@ export default function PreFlightPage({
       // ── Step 3: Build the background layer on the main canvas ──────
       const isBgBlur = videoBackground === "blur";
       const bgImg = bgImageRef.current;
+      const bgVideo = bgVideoRef.current;
       const hasBgImg = bgImg && bgImg.complete && bgImg.naturalWidth > 0;
+      const hasBgVideo = bgVideo && bgVideo.readyState >= 2 && bgVideo.videoWidth > 0;
 
       if (isBgBlur) {
         // Blurred video as background (blur the whole frame, then cut
@@ -262,6 +298,10 @@ export default function PreFlightPage({
         ctx.filter = "blur(14px)";
         ctx.drawImage(tempCanvas, 0, 0);
         ctx.filter = "none";
+      } else if (hasBgVideo) {
+        // Looping video as background
+        const bgr = coverRect(bgVideo.videoWidth, bgVideo.videoHeight, cw, ch);
+        ctx.drawImage(bgVideo, bgr.x, bgr.y, bgr.w, bgr.h);
       } else if (hasBgImg) {
         // Cover-fill the background image
         const bgr = coverRect(bgImg.naturalWidth, bgImg.naturalHeight, cw, ch);
@@ -483,12 +523,13 @@ export default function PreFlightPage({
   const handleBgUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (!file.type.startsWith("image/")) return;
+    const isVideo = file.type.startsWith("video/");
+    if (!file.type.startsWith("image/") && !isVideo) return;
     const reader = new FileReader();
     reader.onload = (ev) => {
       const dataUrl = ev.target?.result as string;
       const name = `bg-${Date.now()}`;
-      const updated = [...customBgs, { name, data: dataUrl }];
+      const updated: CustomBg[] = [...customBgs, { name, data: dataUrl, type: isVideo ? 'video' : 'image' }];
       setCustomBgs(updated);
       localStorage.setItem(STORAGE_BGS_KEY, JSON.stringify(updated));
       setVideoBackground(`custom-${name}`);
@@ -799,7 +840,7 @@ export default function PreFlightPage({
                   <input
                     ref={fileInputRef}
                     type="file"
-                    accept="image/*"
+                    accept="image/*,video/*"
                     style={{ display: "none" }}
                     onChange={handleBgUpload}
                   />
@@ -812,8 +853,16 @@ export default function PreFlightPage({
                       title={bg.name}
                     >
                       <div className="preflight-bg-thumb" style={{ position: "relative" }}>
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={bg.data} alt="" className="preflight-bg-thumb-img" />
+                        {bg.type === "video" ? (
+                          <div className="preflight-bg-thumb-video-indicator">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                              <polygon points="5 3 19 12 5 21 5 3" />
+                            </svg>
+                          </div>
+                        ) : (
+                          /* eslint-disable-next-line @next/next/no-img-element */
+                          <img src={bg.data} alt="" className="preflight-bg-thumb-img" />
+                        )}
                       </div>
                     </button>
                   ))}

@@ -92,6 +92,7 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   mirror_video BOOLEAN DEFAULT true,
   camera_off_on_join BOOLEAN DEFAULT false,
   video_background TEXT DEFAULT 'none',
+  studio_effect BOOLEAN DEFAULT false,
   show_captions BOOLEAN DEFAULT true,
   mute_original_audio BOOLEAN DEFAULT true,
   translate_audio_playback BOOLEAN DEFAULT true,
@@ -106,6 +107,7 @@ CREATE TABLE IF NOT EXISTS public.profiles (
 -- Extra columns added by later migrations (idempotent)
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS glossary JSONB DEFAULT '[]'::jsonb;
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS content_type TEXT DEFAULT 'normal';
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS studio_effect BOOLEAN DEFAULT false;
 
 -- ── MEETINGS ──────────────────────────────────────────────────────────────
 

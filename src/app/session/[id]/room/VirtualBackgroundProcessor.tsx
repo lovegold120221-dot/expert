@@ -11,7 +11,8 @@ export default function VirtualBackgroundProcessor() {
   const { profile } = useUser();
   
   const videoBackground = profile?.video_background || "none";
-  const [customBgs, setCustomBgs] = useState<{ name: string; data: string }[]>([]);
+  type CustomBg = { name: string; data: string; type?: 'image' | 'video' };
+  const [customBgs, setCustomBgs] = useState<CustomBg[]>([]);
 
   // Keep references to active tracks/state to avoid stale closures
   const rawTrackRef = useRef<LocalVideoTrack | null>(null);
@@ -19,6 +20,7 @@ export default function VirtualBackgroundProcessor() {
   const publishedCanvasTrackRef = useRef<TrackPublication | null>(null); // TrackPublication
   const compositeLoopRunningRef = useRef<boolean>(false);
   const bgImageRef = useRef<HTMLImageElement | null>(null);
+  const bgVideoRef = useRef<HTMLVideoElement | null>(null);
   const animFrameIdRef = useRef<number>(0);
 
   // Load custom backgrounds on mount
@@ -32,28 +34,60 @@ export default function VirtualBackgroundProcessor() {
     } catch { /* ignore */ }
   }, []);
 
-  // Preload and cache selected background image
+  // Helper to clean up a background video element
+  const stopBgVideo = useCallback(() => {
+    if (bgVideoRef.current) {
+      bgVideoRef.current.pause();
+      bgVideoRef.current.src = "";
+      bgVideoRef.current.load(); // release allocated media
+      bgVideoRef.current = null;
+    }
+  }, []);
+
+  // Preload and cache selected background image/video
   useEffect(() => {
     if (videoBackground === "none" || videoBackground === "blur") {
       bgImageRef.current = null;
+      stopBgVideo();
       return;
     }
 
-    if (videoBackground.startsWith("custom-")) {
-      const entry = customBgs.find((b) => `custom-${b.name}` === videoBackground);
-      if (entry) {
-        const img = new Image();
-        img.crossOrigin = "anonymous";
-        img.src = entry.data;
-        img.onload = () => { bgImageRef.current = img; };
-      }
-    } else {
+    const entry = videoBackground.startsWith("custom-")
+      ? customBgs.find((b) => `custom-${b.name}` === videoBackground)
+      : null;
+
+    if (entry?.type === "video") {
+      // Video background — create a looping video element
+      bgImageRef.current = null;
+      stopBgVideo();
+      const video = document.createElement("video");
+      video.crossOrigin = "anonymous";
+      video.loop = true;
+      video.muted = true;
+      video.playsInline = true;
+      video.autoplay = true;
+      video.src = entry.data;
+      video.play().catch(() => {});
+      bgVideoRef.current = video;
+    } else if (entry) {
+      bgVideoRef.current = null;
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.src = entry.data;
+      img.onload = () => { bgImageRef.current = img; };
+    } else if (!videoBackground.startsWith("custom-")) {
+      bgVideoRef.current = null;
       const img = new Image();
       img.crossOrigin = "anonymous";
       img.src = `/${videoBackground}`;
       img.onload = () => { bgImageRef.current = img; };
     }
   }, [videoBackground, customBgs]);
+
+  // Clean up background video on unmount
+  useEffect(() => {
+    return () => stopBgVideo();
+  }, [stopBgVideo]);
 
   // Helper to cover-fill draw a source onto target dimensions
   const coverRect = (
@@ -119,15 +153,20 @@ export default function VirtualBackgroundProcessor() {
         return;
       }
 
-      // Step 3: Draw background (blur or image)
+      // Step 3: Draw background (blur, image, or video)
       const isBgBlur = videoBackground === "blur";
       const bgImg = bgImageRef.current;
+      const bgVideo = bgVideoRef.current;
       const hasBgImg = bgImg && bgImg.complete && bgImg.naturalWidth > 0;
+      const hasBgVideo = bgVideo && bgVideo.readyState >= 2 && bgVideo.videoWidth > 0;
 
       if (isBgBlur) {
         ctx.filter = "blur(14px)";
         ctx.drawImage(tempCanvas, 0, 0);
         ctx.filter = "none";
+      } else if (hasBgVideo) {
+        const bgr = coverRect(bgVideo.videoWidth, bgVideo.videoHeight, cw, ch);
+        ctx.drawImage(bgVideo, bgr.x, bgr.y, bgr.w, bgr.h);
       } else if (hasBgImg) {
         const bgr = coverRect(bgImg.naturalWidth, bgImg.naturalHeight, cw, ch);
         ctx.drawImage(bgImg, bgr.x, bgr.y, bgr.w, bgr.h);
